@@ -170,7 +170,7 @@ Return a JSON object EXACTLY matching this structure:
             </div>
           ) : result ? (
             <div className="max-w-4xl mx-auto">
-              <div className="markdown-body">
+              <div className="markdown-body text-sm leading-relaxed">
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>{result}</ReactMarkdown>
               </div>
 
