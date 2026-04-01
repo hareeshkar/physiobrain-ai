@@ -1,43 +1,38 @@
+import dotenv from "dotenv";
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
-import OpenAI from "openai";
+import { fileURLToPath } from "url";
+import { createMinimaxCompletion } from "./src/lib/minimax";
 
-const OPENROUTER_API_KEY = "process.env.OPENROUTER_API_KEY";
-const MODEL = "nvidia/nemotron-3-super-120b-a12b:free";
+dotenv.config({ path: ".env.local" });
 
-const openai = new OpenAI({
-  baseURL: "https://openrouter.ai/api/v1",
-  apiKey: OPENROUTER_API_KEY,
-  defaultHeaders: {
-    "HTTP-Referer": "https://physiobrain.app",
-    "X-OpenRouter-Title": "PhysioBrain",
-  },
-});
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT || 3000);
 
-  // Increase payload limit to support very long prompts and context windows
+  // Increase payload limit
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-  // API route to proxy OpenRouter requests using the official SDK
+  // Simple API route - no retry logic
   app.post("/api/chat", async (req, res) => {
     try {
-      const { messages, temperature } = req.body;
+      const { messages, temperature, max_tokens } = req.body;
 
-      const completion = await openai.chat.completions.create({
-        model: MODEL,
+      const completion = await createMinimaxCompletion({
         messages,
         temperature: temperature ?? 0.7,
+        max_tokens: max_tokens ?? 16000,
       });
 
       res.json(completion);
     } catch (error: any) {
-      console.error("OpenAI SDK Error:", error);
-      res.status(500).json({ error: error.message || "Failed to fetch from OpenRouter" });
+      console.error("MiniMax API Error:", error.message);
+      res.status(500).json({ error: error.message || "Failed" });
     }
   });
 
@@ -49,7 +44,7 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
+    const distPath = path.join(__dirname, 'dist');
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));

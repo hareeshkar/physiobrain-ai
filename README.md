@@ -15,6 +15,15 @@ View your app in AI Studio: https://ai.studio/apps/852518b9-dc8c-4721-8fd6-159d5
 
 1. Install dependencies:
    `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+2. Set the `MINIMAX_API_KEY` in [.env.local](.env.local)
 3. Run the app:
    `npm run dev`
+
+## Deploy on Vercel
+
+1. Push the repo to GitHub.
+2. Import the project into Vercel.
+3. Set `MINIMAX_API_KEY` in the Vercel project environment variables.
+4. Deploy.
+
+The frontend is a Vite SPA and the chat endpoint is exposed as a Vercel Function at `/api/chat`.

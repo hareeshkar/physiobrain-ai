@@ -1,14 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Activity, BookOpen, Languages, LogOut, BrainCircuit, Settings2, Sparkles, ArrowRight, Layers, Zap, FileText, Microscope, Globe } from 'lucide-react';
+import { Activity, BookOpen, Languages, LogOut, BrainCircuit, Settings2, Sparkles, ArrowRight, Layers, Zap, FileText, Microscope, Globe, History, Clock, PlayCircle, AlertCircle, X, RefreshCw, CheckCircle } from 'lucide-react';
 import { Simulator } from './Simulator';
 import { KnowledgeEngine } from './KnowledgeEngine';
 import { Translator } from './Translator';
 import { CaseGenerator } from './CaseGenerator';
+import { FeedbackView } from './FeedbackView';
 import { CaseConfig } from '../types';
 import { cn } from '../lib/utils';
+import { getSessionHistory, getActiveSession, deleteActiveSession, deleteSession, saveSessionToHistory, SessionHistory, ActiveSession, initDB } from '../lib/db';
 
-type View = 'dashboard' | 'case-generator' | 'simulator' | 'knowledge' | 'translator';
+type View = 'dashboard' | 'case-generator' | 'simulator' | 'knowledge' | 'translator' | 'feedback' | 'history';
 
 const PREMADE_MODULES = [
   { name: "Low Back Pain", icon: "spine", color: "#FF3366" },
@@ -49,10 +51,127 @@ export function Dashboard() {
   const [currentView, setCurrentView] = useState<View>('dashboard');
   const [activeConfig, setActiveConfig] = useState<CaseConfig | null>(null);
   const [hoveredFeature, setHoveredFeature] = useState<number | null>(null);
+  const [history, setHistory] = useState<SessionHistory[]>([]);
+  const [activeSessions, setActiveSessions] = useState<ActiveSession[]>([]);
+  const [feedbackData, setFeedbackData] = useState<any>(null);
+
+  // Feedback view data (passed from simulator/exam)
+  const [feedbackSession, setFeedbackSession] = useState<{
+    id?: string;
+    type: 'simulator' | 'exam';
+    config: CaseConfig;
+    caseDetails?: any;
+    messages?: any[];
+    clinicalNotes?: string;
+    studentAnswers?: string;
+    feedback: string;
+    diagnosis?: string;
+  } | null>(null);
+
+  useEffect(() => {
+    initDB().catch(console.error);
+    loadHistory();
+  }, []);
+
+  const loadHistory = async () => {
+    try {
+      // Combine active sessions and completed history
+      const [completedSessions, activeSim, activeExam] = await Promise.all([
+        getSessionHistory(20),
+        getActiveSession('simulator'),
+        getActiveSession('exam')
+      ]);
+
+      // Combine and dedupe by ID
+      const activeSess: ActiveSession[] = [];
+      if (activeSim) activeSess.push(activeSim);
+      if (activeExam) activeSess.push(activeExam);
+
+      // Convert active sessions to same format as history
+      const activeAsHistory = activeSess.map(s => ({
+        id: s.id,
+        type: s.type,
+        config: s.config,
+        caseDetails: s.caseDetails,
+        messages: s.messages,
+        clinicalNotes: s.clinicalNotes,
+        studentAnswers: s.studentAnswers,
+        feedback: undefined as string | undefined,
+        diagnosis: (s.caseDetails as any)?.diagnosis,
+        completedAt: s.lastUpdatedAt,
+        duration: Math.floor((Date.now() - s.startedAt) / 1000),
+        ended: s.ended,
+      }));
+
+      // Combine and dedupe by ID (prefer completedSessions if duplicate)
+      const sessionMap = new Map<string, any>();
+
+      // Add active sessions first
+      activeAsHistory.forEach(s => sessionMap.set(s.id, s));
+
+      // Override with completed sessions (they have more complete data)
+      completedSessions.forEach(s => sessionMap.set(s.id, s));
+
+      const allSessions = Array.from(sessionMap.values())
+        .sort((a, b) => b.completedAt - a.completedAt);
+
+      setHistory(allSessions);
+    } catch (e) {
+      console.error('Failed to load history:', e);
+    }
+  };
+
+  // Helper to get session status
+  const getSessionStatus = (session: any) => {
+    if (!session.ended) return { status: 'ongoing', label: 'Ongoing', color: 'bg-green-500 text-white' };
+    if (session.ended && !session.feedback) return { status: 'awaiting', label: 'Awaiting Feedback', color: 'bg-yellow-500 text-ink' };
+    return { status: 'completed', label: 'Completed', color: 'bg-accent text-surface' };
+  };
+
+  // Handle session action based on status
+  const handleSessionAction = (session: any) => {
+    const status = getSessionStatus(session);
+
+    if (status.status === 'ongoing') {
+      // Continue session
+      setActiveConfig(session.config);
+      setCurrentView('simulator');
+    } else {
+      // View or generate feedback
+      setFeedbackSession({
+        id: session.id,
+        type: session.type,
+        config: session.config,
+        caseDetails: session.caseDetails,
+        messages: session.messages,
+        clinicalNotes: session.clinicalNotes,
+        studentAnswers: session.studentAnswers,
+        feedback: session.feedback,
+        diagnosis: session.diagnosis,
+      });
+      setCurrentView('feedback');
+    }
+  };
 
   const handleLogout = () => {
-    localStorage.removeItem('physiobrain_api_key');
     window.location.reload();
+  };
+
+  const resumeSession = (session: any) => {
+    setActiveConfig(session.config);
+    setCurrentView('simulator');
+  };
+
+  const discardSession = async (session: any, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (confirm('Discard this session? Your progress will be lost.')) {
+      if (session.type === 'simulator' || session.type === 'exam') {
+        await deleteActiveSession(session.id);
+      } else {
+        await deleteSession(session.id);
+      }
+      loadHistory();
+    }
   };
 
   const startQuickSimulation = (module: string) => {
@@ -101,6 +220,7 @@ export function Dashboard() {
         <nav className="flex gap-3 md:gap-6 overflow-x-auto no-scrollbar">
           {[
             { label: 'Create Case', view: 'case-generator' as View },
+            { label: 'History', view: 'history' as View },
             { label: 'Evidence Engine', view: 'knowledge' as View },
             { label: 'Translator', view: 'translator' as View }
           ].map((item, i) => (
@@ -331,6 +451,64 @@ export function Dashboard() {
                 {/* Bottom Gradient Fade */}
                 <div className="absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-t from-bg to-transparent" />
               </section>
+
+              {/* Session History Section */}
+              {history.length > 0 && (
+                <section className="py-8 md:py-12 px-4 md:px-8 lg:px-12 bg-bg">
+                  <div className="max-w-7xl mx-auto">
+                    <div className="flex items-center justify-between mb-6">
+                      <h3 className="font-mono text-[10px] md:text-xs uppercase tracking-widest text-muted-text flex items-center gap-2">
+                        <History className="w-4 h-4" /> Recent Sessions
+                      </h3>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
+                      {history.slice(0, 6).map((session) => {
+                        const sessionStatus = getSessionStatus(session);
+                        return (
+                        <motion.div
+                          key={session.id}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="bg-surface brutal-border brutal-shadow p-4 hover:border-accent transition-colors group"
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <span className={cn(
+                              "inline-block px-2 py-0.5 font-mono text-xs uppercase",
+                              session.type === 'exam' ? "bg-accent text-surface" : "bg-ink text-surface"
+                            )}>
+                              {session.type}
+                            </span>
+                            <span className={cn(
+                              "inline-block px-2 py-0.5 font-mono text-[10px] uppercase",
+                              sessionStatus.color
+                            )}>
+                              {sessionStatus.label}
+                            </span>
+                          </div>
+                          <h4 className="font-display font-bold uppercase text-sm mb-1">{session.config.module}</h4>
+                          <p className="font-mono text-xs text-muted-text">
+                            {session.config.ageGroup} • {session.config.complexity}
+                          </p>
+                          <div className="mt-3 pt-3 border-t border-muted flex items-center justify-between">
+                            <span className="font-mono text-[10px] text-muted-text uppercase flex items-center gap-1">
+                              <Clock className="w-3 h-3" /> {Math.floor(session.duration / 60)}m {session.duration % 60}s
+                            </span>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleSessionAction(session); }}
+                              className="font-mono text-[10px] text-accent uppercase hover:underline flex items-center gap-1"
+                            >
+                              {sessionStatus.status === 'ongoing' && <><PlayCircle className="w-3 h-3" /> Continue</>}
+                              {sessionStatus.status === 'awaiting' && <><RefreshCw className="w-3 h-3" /> Generate</>}
+                              {sessionStatus.status === 'completed' && <><CheckCircle className="w-3 h-3" /> View</>}
+                            </button>
+                          </div>
+                        </motion.div>
+                      );
+                      })}
+                    </div>
+                  </div>
+                </section>
+              )}
             </motion.div>
           )}
 
@@ -352,7 +530,41 @@ export function Dashboard() {
               exit={{ opacity: 0 }}
               className="h-[calc(100vh-5rem)] md:h-[calc(100vh-6rem)]"
             >
-              <Simulator config={activeConfig} onExit={() => setCurrentView('dashboard')} />
+              <Simulator
+                config={activeConfig}
+                onExit={() => setCurrentView('dashboard')}
+                onComplete={(feedbackSessionData) => {
+                  setFeedbackSession(feedbackSessionData);
+                  setCurrentView('feedback');
+                }}
+              />
+            </motion.div>
+          )}
+
+          {currentView === 'feedback' && feedbackSession && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="h-[calc(100vh-5rem)] md:h-[calc(100vh-6rem)]"
+            >
+              <FeedbackView
+                type={feedbackSession.type}
+                config={feedbackSession.config}
+                caseDetails={feedbackSession.caseDetails}
+                messages={feedbackSession.messages}
+                clinicalNotes={feedbackSession.clinicalNotes}
+                studentAnswers={feedbackSession.studentAnswers}
+                feedback={feedbackSession.feedback}
+                diagnosis={feedbackSession.diagnosis}
+                sessionId={feedbackSession.id}
+                onClose={() => {
+                  setFeedbackSession(null);
+                  loadHistory();
+                  setCurrentView('dashboard');
+                }}
+                onViewHistory={() => setCurrentView('dashboard')}
+              />
             </motion.div>
           )}
 
@@ -375,6 +587,78 @@ export function Dashboard() {
               className="h-[calc(100vh-5rem)] md:h-[calc(100vh-6rem)]"
             >
               <Translator />
+            </motion.div>
+          )}
+
+          {currentView === 'history' && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="h-[calc(100vh-5rem)] md:h-[calc(100vh-6rem)] overflow-y-auto"
+            >
+              <div className="max-w-7xl mx-auto p-4 md:p-8">
+                <div className="flex items-center justify-between mb-8">
+                  <div className="flex items-center gap-3">
+                    <History className="w-8 h-8 text-accent" />
+                    <h1 className="font-display font-bold text-3xl md:text-4xl uppercase">Session History</h1>
+                  </div>
+                </div>
+
+                {history.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-20 text-muted-text">
+                    <Clock className="w-16 h-16 mb-4 opacity-50" />
+                    <p className="font-mono text-lg uppercase">No sessions yet</p>
+                    <p className="font-mono text-sm mt-2">Complete a simulation or exam to see it here</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {history.map((session) => {
+                      const sessionStatus = getSessionStatus(session);
+                      return (
+                      <motion.div
+                        key={session.id}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="bg-surface brutal-border brutal-shadow p-5 hover:border-accent transition-colors group"
+                      >
+                        <div className="flex items-center justify-between mb-3">
+                          <span className={cn(
+                            "inline-block px-3 py-1 font-mono text-xs uppercase",
+                            session.type === 'exam' ? "bg-accent text-surface" : "bg-ink text-surface"
+                          )}>
+                            {session.type}
+                          </span>
+                          <span className={cn(
+                            "inline-block px-2 py-0.5 font-mono text-[10px] uppercase",
+                            sessionStatus.color
+                          )}>
+                            {sessionStatus.label}
+                          </span>
+                        </div>
+                        <h3 className="font-display font-bold uppercase text-lg mb-2">{session.config.module}</h3>
+                        <p className="font-mono text-sm text-muted-text mb-3">
+                          {session.config.ageGroup} • {session.config.complexity}
+                        </p>
+                        <div className="pt-3 border-t border-muted flex items-center justify-between">
+                          <span className="font-mono text-xs text-muted-text">
+                            {Math.floor(session.duration / 60)}m {session.duration % 60}s
+                          </span>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleSessionAction(session); }}
+                            className="font-mono text-xs text-accent uppercase hover:underline flex items-center gap-1"
+                          >
+                            {sessionStatus.status === 'ongoing' && <><PlayCircle className="w-4 h-4" /> Continue</>}
+                            {sessionStatus.status === 'awaiting' && <><RefreshCw className="w-4 h-4" /> Generate Feedback</>}
+                            {sessionStatus.status === 'completed' && <><CheckCircle className="w-4 h-4" /> View Feedback</>}
+                          </button>
+                        </div>
+                      </motion.div>
+                    );
+                    })}
+                  </div>
+                )}
+              </div>
             </motion.div>
           )}
         </AnimatePresence>

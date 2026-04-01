@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Send, User, Brain, Activity, AlertTriangle, RefreshCw, FileText, X, AlertCircle } from 'lucide-react';
-import { generateContent, generateJson, getAIClient } from '../lib/ai';
+import { generateJson, getAIClient } from '../lib/ai';
 import ReactMarkdown from 'react-markdown';
 import { CaseConfig } from '../types';
 import { cn } from '../lib/utils';
+import { saveActiveSession, getActiveSession, saveSessionToHistory, deleteActiveSession, ActiveSession } from '../lib/db';
 
 interface Message {
   id: string;
@@ -21,10 +22,19 @@ export interface CaseDetails {
 interface InteractiveSimulatorProps {
   config: CaseConfig;
   onExit: () => void;
+  onComplete?: (feedbackData: {
+    type: 'simulator';
+    config: CaseConfig;
+    caseDetails: CaseDetails | null;
+    messages: Message[];
+    clinicalNotes: string;
+    feedback: string;
+    diagnosis?: string;
+  }) => void;
 }
 
-export function InteractiveSimulator({ config, onExit }: InteractiveSimulatorProps) {
-  const [caseState, setCaseState] = useState<'generating' | 'active' | 'error'>('generating');
+export function InteractiveSimulator({ config, onExit, onComplete }: InteractiveSimulatorProps) {
+  const [caseState, setCaseState] = useState<'generating' | 'active' | 'error' | 'resuming'>('resuming');
   const [caseDetails, setCaseDetails] = useState<CaseDetails | null>(null);
 
   const [messages, setMessages] = useState<Message[]>([]);
@@ -37,8 +47,13 @@ export function InteractiveSimulator({ config, onExit }: InteractiveSimulatorPro
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [showErrorDialog, setShowErrorDialog] = useState(false);
 
+  // Track failed message for retry
+  const [failedMessage, setFailedMessage] = useState<string | null>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatSessionRef = useRef<any>(null);
+  const sessionIdRef = useRef<string>('');
+  const initializedRef = useRef(false);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -48,9 +63,107 @@ export function InteractiveSimulator({ config, onExit }: InteractiveSimulatorPro
     scrollToBottom();
   }, [messages]);
 
+  // Check for existing session on mount
   useEffect(() => {
-    generateCase();
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+
+    const checkExistingSession = async () => {
+      try {
+        const existing = await getActiveSession('simulator');
+        console.log('[Resume Check] Found session:', existing ? `id=${existing.id}, module=${existing.config.module}` : 'none');
+        console.log('[Resume Check] Current config module:', config.module);
+        console.log('[Resume Check] Match:', existing && existing.config.module === config.module);
+
+        if (existing && existing.config.module === config.module) {
+          // Resume existing session
+          console.log('[Resume Check] Resuming session', existing.id);
+          sessionIdRef.current = existing.id;
+          setCaseDetails(existing.caseDetails || null);
+          setMessages(existing.messages || []);
+          setClinicalNotes(existing.clinicalNotes || '');
+          setCaseState('active');
+
+          // If session was ended, go to feedback view instead
+          if (existing.ended) {
+            console.log('[Resume Check] Session ended, going to feedback');
+            if (onComplete) {
+              onComplete({
+                type: 'simulator',
+                config: existing.config,
+                caseDetails: existing.caseDetails || null,
+                messages: existing.messages || [],
+                clinicalNotes: existing.clinicalNotes || '',
+                feedback: undefined, // FeedbackView will generate
+                diagnosis: existing.caseDetails?.diagnosis,
+              });
+            }
+            return;
+          }
+
+          // Re-initialize the chat with the existing messages
+          if (existing.caseDetails) {
+            initSimulation(existing.caseDetails.hiddenPersona, true);
+          }
+
+          // Explicitly save after resuming to update lastUpdatedAt
+          saveActiveSession({
+            id: existing.id,
+            type: 'simulator',
+            config,
+            caseDetails: existing.caseDetails,
+            messages: existing.messages || [],
+            clinicalNotes: existing.clinicalNotes || '',
+            studentAnswers: '',
+            startedAt: existing.startedAt,
+            lastUpdatedAt: Date.now(),
+            ended: false,
+          });
+          return;
+        }
+      } catch (e) {
+        console.error('Failed to check existing session:', e);
+        generateCase();
+        return;
+      }
+      // No existing session or different module - generate new case
+      console.log('[Resume Check] No matching session found, generating new case');
+      generateCase();
+    };
+
+    checkExistingSession();
   }, [config]);
+
+  // Auto-save session to IndexedDB
+  const saveSession = useCallback(async () => {
+    if (caseState !== 'active') return;
+    if (!sessionIdRef.current) {
+      sessionIdRef.current = `sim-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    }
+    const session: ActiveSession = {
+      id: sessionIdRef.current,
+      type: 'simulator',
+      config,
+      caseDetails: caseDetails || undefined,
+      messages,
+      clinicalNotes,
+      studentAnswers: '',
+      startedAt: Date.now(),
+      lastUpdatedAt: Date.now(),
+      ended: false,
+    };
+    try {
+      await saveActiveSession(session);
+    } catch (e) {
+      console.error('Failed to save session:', e);
+    }
+  }, [caseState, config, caseDetails, messages, clinicalNotes]);
+
+  // Auto-save on changes
+  useEffect(() => {
+    const timeoutId = setTimeout(saveSession, 1000);
+    return () => clearTimeout(timeoutId);
+  }, [saveSession]);
 
   const getDifficultyLevel = () => {
     // Determine difficulty based on complexity and severity settings
@@ -149,9 +262,27 @@ Return ONLY a JSON object matching EXACTLY this structure:
         throw new Error("Invalid response structure from AI");
       }
 
+      // Save case to IndexedDB immediately
+      if (!sessionIdRef.current) {
+        sessionIdRef.current = `sim-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      }
+      const session: ActiveSession = {
+        id: sessionIdRef.current,
+        type: 'simulator',
+        config,
+        caseDetails: data,
+        messages: [],
+        clinicalNotes: '',
+        studentAnswers: '',
+        startedAt: Date.now(),
+        lastUpdatedAt: Date.now(),
+        ended: false,
+      };
+      await saveActiveSession(session);
+
       setCaseDetails(data);
       setCaseState('active');
-      initSimulation(data.hiddenPersona);
+      initSimulation(data.hiddenPersona, false);
     } catch (error: any) {
       console.error("Failed to generate case:", error);
       setErrorMessage(error.message || "Failed to generate case. Please try again.");
@@ -160,7 +291,7 @@ Return ONLY a JSON object matching EXACTLY this structure:
     }
   };
 
-  const initSimulation = async (persona: string) => {
+  const initSimulation = async (persona: string, isResume: boolean) => {
     setIsLoading(true);
     try {
       const ai = getAIClient();
@@ -176,9 +307,12 @@ Return ONLY a JSON object matching EXACTLY this structure:
 
       chatSessionRef.current = chat;
 
-      setMessages([
-        { id: '1', role: 'system', content: 'Simulation started. You may begin the subjective assessment.' }
-      ]);
+      // Only add system message if not resuming (when resuming, messages already exist)
+      if (!isResume) {
+        setMessages([
+          { id: '1', role: 'system', content: 'Simulation started. You may begin the subjective assessment.' }
+        ]);
+      }
     } catch (error: any) {
       console.error("Failed to initialize simulation:", error);
       setErrorMessage(error.message || "Failed to initialize simulation.");
@@ -200,74 +334,87 @@ Return ONLY a JSON object matching EXACTLY this structure:
     onExit();
   };
 
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || isLoading || !chatSessionRef.current) return;
+  const handleSendMessage = async (e?: React.FormEvent, retryMsg?: string) => {
+    if (e) e.preventDefault();
 
-    const userMsg = input.trim();
-    setInput('');
-    setMessages(prev => [...prev, { id: Date.now().toString(), role: 'user', content: userMsg }]);
+    const userMsg = retryMsg || input.trim();
+    if (!userMsg || isLoading || !chatSessionRef.current) return;
+
+    // If this is a retry, remove the failed message from UI first
+    if (retryMsg) {
+      setMessages(prev => prev.filter(m => m.id !== 'pending'));
+      setFailedMessage(null);
+    } else {
+      setInput('');
+    }
+
+    const tempId = `pending-${Date.now()}`;
+    setMessages(prev => [...prev, { id: tempId, role: 'user', content: userMsg }]);
     setIsLoading(true);
 
     try {
       const response = await chatSessionRef.current.sendMessage({ message: userMsg });
+      // Replace pending message with confirmed
+      setMessages(prev => prev.map(m => m.id === tempId ? { ...m, id: Date.now().toString() } : m));
       setMessages(prev => [...prev, { id: Date.now().toString(), role: 'patient', content: response.text || "" }]);
     } catch (error: any) {
       console.error("Error sending message:", error);
-      setErrorMessage(error.message || "Connection lost. Please try again.");
-      setShowErrorDialog(true);
+      // Mark message as failed (change id so it can be retried)
+      setMessages(prev => prev.map(m => m.id === tempId ? { ...m, id: 'failed' } : m));
+      setFailedMessage(userMsg);
     } finally {
       setIsLoading(false);
     }
   };
 
+  const retryFailedMessage = () => {
+    if (failedMessage) {
+      handleSendMessage(undefined, failedMessage);
+    }
+  };
+
   const requestFeedback = async () => {
     setIsLoading(true);
-    setIsSimulationEnded(true);
     try {
-      const conversationHistory = messages.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n');
+      // Move session from active to history as "ended" (FeedbackView will generate feedback)
+      if (sessionIdRef.current) {
+        try {
+          const activeSession = await getActiveSession('simulator');
+          if (activeSession && activeSession.id === sessionIdRef.current) {
+            const duration = Math.floor((Date.now() - activeSession.startedAt) / 1000);
+            await saveSessionToHistory({
+              id: activeSession.id,
+              type: 'simulator',
+              config: activeSession.config,
+              caseDetails: activeSession.caseDetails,
+              messages: messages,
+              clinicalNotes: clinicalNotes,
+              studentAnswers: '',
+              feedback: undefined, // FeedbackView will generate
+              diagnosis: caseDetails?.diagnosis,
+              completedAt: Date.now(),
+              duration,
+              ended: true,
+            });
+            await deleteActiveSession(sessionIdRef.current);
+          }
+        } catch (e) {
+          console.error('Failed to move session to history:', e);
+        }
+      }
 
-      const prompt = `You are an expert, constructive Physiotherapy Clinical Educator evaluating a student's performance in a clinical simulation. Your goal is to help them learn by providing detailed explanations for scoring and improvement areas. Adapt your expectations, strictness, and the depth of your medical explanations to the specified "${config.complexity}" complexity level and "${config.terminology}" terminology level.
-
-### SIMULATION CONTEXT
-- Module: ${config.module}
-- Setting: ${config.setting}
-- Patient Profile: ${config.ageGroup}, ${config.severity} severity.
-- ACTUAL Patient Diagnosis: ${caseDetails?.diagnosis}
-- Patient Persona/Background: ${caseDetails?.hiddenPersona}
-
-### STUDENT'S DATA
-1. STUDENT'S CLINICAL NOTES (Their internal thought process, hypotheses, and planning):
-"""
-${clinicalNotes || "(No clinical notes provided by the student)"}
-"""
-
-2. CONVERSATION HISTORY (Transcript of their interaction with the patient):
-"""
-${conversationHistory}
-"""
-
-### EVALUATION TASK
-Analyze the student's reasoning based heavily on their clinical notes and conversation history.
-
-FORMAT YOUR RESPONSE IN MARKDOWN:
-### Overall Performance Summary
-(Provide an encouraging but honest summary. Give a qualitative "score" or rating of their clinical reasoning and data gathering.)
-
-### Subjective & Objective Assessment
-(Evaluate their questioning technique. Did they ask specific enough questions? Did they miss red flags or psychosocial factors? Detail exactly what they missed and why it was important for this specific case.)
-
-### Clinical Reasoning Analysis
-(Deeply analyze their clinical notes. How was their hypothesis generation? If they guessed wrong, was their logic sound based on the data they gathered? Provide a detailed explanation of the actual presentation and pathophysiology of ${caseDetails?.diagnosis} at the ${config.terminology} level.)
-
-### Communication & Bedside Manner
-(Evaluate how they spoke to the patient. Was it appropriate for the setting and patient persona?)
-
-### Actionable Next Steps
-(Give 2-3 highly specific, actionable tips for their next clinical encounter to improve their reasoning and assessment skills.)`;
-
-      const feedbackResponse = await generateContent(prompt, "You are an expert Physiotherapy Clinical Educator.");
-      setFeedback(feedbackResponse);
+      // Trigger completion - FeedbackView will generate its own feedback
+      if (onComplete) {
+        onComplete({
+          type: 'simulator',
+          config,
+          caseDetails: caseDetails,
+          messages,
+          clinicalNotes,
+          feedback: undefined, // Let FeedbackView generate
+          diagnosis: caseDetails?.diagnosis,
+        });
+      }
     } catch (error: any) {
       console.error("Error getting feedback:", error);
       setErrorMessage(error.message || "Failed to generate feedback.");
@@ -372,15 +519,13 @@ FORMAT YOUR RESPONSE IN MARKDOWN:
               <span className="font-mono text-[10px] md:text-xs text-muted-text uppercase hidden sm:block">{config.module} - {config.setting}</span>
             </div>
           </div>
-          {isSimulationEnded ? (
-            <button onClick={onExit} className="text-[10px] md:text-xs font-mono uppercase hover:text-accent transition-colors shrink-0">
-              [ Return ]
-            </button>
-          ) : (
-            <button onClick={requestFeedback} className="text-[10px] md:text-xs font-mono uppercase hover:text-accent transition-colors shrink-0">
-              [ End & Evaluate ]
-            </button>
-          )}
+          <button
+            onClick={requestFeedback}
+            disabled={isLoading || messages.length < 1}
+            className="text-[10px] md:text-xs font-mono uppercase hover:text-accent transition-colors shrink-0 disabled:opacity-50"
+          >
+            {isLoading ? '[ Generating... ]' : '[ End & Evaluate ]'}
+          </button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-3 md:p-6 flex flex-col gap-4 md:gap-6">
@@ -396,12 +541,25 @@ FORMAT YOUR RESPONSE IN MARKDOWN:
                 "self-start bg-bg"
               )}
             >
-              <div className="text-[10px] font-mono uppercase opacity-50 mb-1 md:mb-2 tracking-wider">
-                {msg.role}
+              <div className="text-[10px] font-mono uppercase opacity-50 mb-1 md:mb-2 tracking-wider flex justify-between items-center">
+                <span>{msg.role}</span>
+                {msg.id === 'failed' && (
+                  <button
+                    onClick={retryFailedMessage}
+                    className="text-[10px] bg-red-500 text-white px-2 py-0.5 rounded uppercase hover:bg-red-600"
+                  >
+                    Retry
+                  </button>
+                )}
               </div>
               <div className="font-sans leading-relaxed break-words">
                 {msg.content}
               </div>
+              {msg.id === 'failed' && (
+                <div className="mt-2 text-[10px] text-red-400 font-mono">
+                  Failed to send. Click retry to try again.
+                </div>
+              )}
             </motion.div>
           ))}
           {isLoading && messages[messages.length - 1]?.role === 'user' && (
@@ -421,13 +579,13 @@ FORMAT YOUR RESPONSE IN MARKDOWN:
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask the patient a question..."
+            placeholder={failedMessage ? "Retry your message..." : "Ask the patient a question..."}
             className="flex-1 p-3 bg-surface brutal-border font-sans text-sm focus:outline-none focus:ring-2 focus:ring-accent"
             disabled={isLoading || isSimulationEnded}
           />
           <button
             type="submit"
-            disabled={isLoading || !input.trim() || isSimulationEnded}
+            disabled={isLoading || (!input.trim() && !failedMessage) || isSimulationEnded}
             className="bg-accent text-surface p-3 brutal-border brutal-shadow-sm hover:bg-ink transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Send className="w-5 h-5" />
@@ -435,23 +593,23 @@ FORMAT YOUR RESPONSE IN MARKDOWN:
         </form>
       </div>
 
-      {/* Right Pane: Clinical Notepad & Coach */}
+      {/* Right Pane: Clinical Notes */}
       <div className="w-full lg:w-[400px] xl:w-[450px] flex flex-col gap-4 lg:gap-6 h-full">
-        {/* Case Brief */}
-        <div className="flex flex-col bg-surface brutal-border brutal-shadow overflow-hidden shrink-0 max-h-[150px]">
+        {/* Case Brief - Main reference (bigger) */}
+        <div className="flex-1 flex flex-col bg-surface brutal-border brutal-shadow overflow-hidden min-h-[250px]">
           <div className="p-2 md:p-3 border-b-2 border-ink bg-bg text-ink flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <FileText className="w-4 h-4" />
               <h3 className="font-display font-bold uppercase text-xs md:text-sm tracking-widest">Case Brief</h3>
             </div>
           </div>
-          <div className="p-3 md:p-4 bg-surface font-sans text-sm leading-relaxed text-muted-text overflow-y-auto">
+          <div className="flex-1 p-3 md:p-4 bg-surface font-sans text-sm leading-relaxed text-muted-text overflow-y-auto">
             {caseDetails?.studentBrief}
           </div>
         </div>
 
-        {/* Clinical Notes */}
-        <div className="flex-1 flex flex-col bg-surface brutal-border brutal-shadow overflow-hidden min-h-[120px] lg:min-h-[150px]">
+        {/* Clinical Notes - Smaller workspace */}
+        <div className="flex-shrink-0 flex flex-col bg-surface brutal-border brutal-shadow overflow-hidden max-h-[200px]">
           <div className="p-2 md:p-3 border-b-2 border-ink bg-ink text-surface flex items-center gap-2">
             <Activity className="w-4 h-4" />
             <h3 className="font-display font-bold uppercase text-xs md:text-sm tracking-widest">Clinical Notes</h3>
@@ -460,37 +618,8 @@ FORMAT YOUR RESPONSE IN MARKDOWN:
             value={clinicalNotes}
             onChange={(e) => setClinicalNotes(e.target.value)}
             placeholder="Document your findings, hypotheses, and plan..."
-            className="flex-1 p-3 md:p-4 bg-transparent resize-none font-mono text-sm focus:outline-none"
+            className="p-3 md:p-4 bg-transparent resize-none font-mono text-sm focus:outline-none h-[100px]"
           />
-        </div>
-
-        {/* Reasoning Coach */}
-        <div className="flex-1 flex flex-col bg-surface brutal-border brutal-shadow overflow-hidden min-h-[200px] lg:min-h-[250px]">
-          <div className="p-2 md:p-3 border-b-2 border-ink bg-accent text-surface flex justify-between items-center">
-            <div className="flex items-center gap-2">
-              <Brain className="w-4 h-4" />
-              <h3 className="font-display font-bold uppercase text-xs md:text-sm tracking-widest">Reasoning Coach</h3>
-            </div>
-            <button
-              onClick={requestFeedback}
-              disabled={isLoading || messages.length < 3 || isSimulationEnded}
-              className="text-[10px] md:text-xs font-mono uppercase bg-surface text-ink px-2 md:px-3 py-1 brutal-border hover:bg-bg transition-colors disabled:opacity-50"
-            >
-              Feedback
-            </button>
-          </div>
-          <div className="flex-1 p-3 md:p-4 overflow-y-auto bg-bg">
-            {feedback ? (
-              <div className="markdown-body text-sm">
-                <ReactMarkdown>{feedback}</ReactMarkdown>
-              </div>
-            ) : (
-              <div className="h-full flex flex-col items-center justify-center text-muted-text text-center p-4">
-                <AlertTriangle className="w-8 h-8 mb-2 opacity-50" />
-                <p className="font-mono text-xs uppercase">Interact with the patient to gather data, then request feedback.</p>
-              </div>
-            )}
-          </div>
         </div>
       </div>
     </div>
