@@ -378,7 +378,7 @@ Return valid JSON only:
       </div>
 
       {/* Main Content - Scrollable */}
-      <div className="flex-1 overflow-y-auto overflow-x-hidden space-y-4 p-2 md:p-0">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden space-y-4 p-2 md:p-0 pb-24 md:pb-10">
         {/* Case Study Card - Collapsible */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-surface rounded-xl shadow-card overflow-hidden">
           <button

@@ -203,7 +203,7 @@ For each question:
       </header>
 
       {/* Scrollable Content */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto pb-24 md:pb-10">
         <div className="max-w-4xl mx-auto p-4 md:p-6 space-y-6">
           {isGenerating ? (
             <div className="flex flex-col items-center justify-center py-20">
