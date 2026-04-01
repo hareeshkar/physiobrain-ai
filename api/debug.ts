@@ -16,8 +16,6 @@ export default function handler(
   const envVars = {
     NODE_ENV: process.env.NODE_ENV,
     MINIMAX_API_KEY: process.env.MINIMAX_API_KEY ? '✅ SET' : '❌ MISSING',
-    GEMINI_API_KEY: process.env.GEMINI_API_KEY ? '✅ SET' : '❌ MISSING',
-    OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY ? '✅ SET' : '❌ MISSING',
     APP_URL: process.env.APP_URL || 'Not configured',
   };
 
@@ -27,16 +25,15 @@ export default function handler(
 
   return res.status(200).json({
     status: 'debug',
-    message: 'Environment variables status (check Vercel dashboard to set them)',
+    message: 'Environment variables status (PhysioBrain AI uses MiniMax API only)',
     configured: envVars,
     allApiRelatedEnvs: allEnvKeys,
     instructions: {
       step1: 'Go to Vercel Dashboard → Project Settings → Environment Variables',
-      step2: 'Add these variables (get actual values from your API providers):',
-      step3: 'MINIMAX_API_KEY: Your MiniMax API key',
-      step4: 'GEMINI_API_KEY: Your Google Gemini API key',
-      step5: 'OPENROUTER_API_KEY: Your OpenRouter API key (optional)',
-      step6: 'Redeploy the project after adding variables',
+      step2: 'Add these variables:',
+      step3: 'MINIMAX_API_KEY: Your MiniMax API key (required)',
+      step4: 'APP_URL: Your deployment URL (optional, for local use http://localhost:5173)',
+      step5: 'Redeploy the project after adding variables',
     },
   });
 }

@@ -2,13 +2,10 @@
 
 ## 🚨 Security Incident - April 1, 2026
 
-**Issue**: OpenRouter API key was accidentally hardcoded in initial commit (d8d8a36)
-
 **Status**: ✅ RESOLVED
-- API key has been automatically disabled by OpenRouter
 - Exposed key removed from git history via `git filter-branch`
 - Repository force-pushed with clean history
-- All future keys managed via environment variables
+- All API keys managed via environment variables only
 
 **What We Did**:
 1. ✅ Identified the hardcoded key in `src/App.tsx`
@@ -26,16 +23,16 @@
 // BAD - Never hardcode keys!
 const API_KEY = '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';
 
-// BAD - Still hardcoded!
-const HARDCODED_API_KEY = 'process.env.OPENROUTER_API_KEY';
+// BAD - Using env variable name as string value!
+const MINIMAX_API_KEY = 'process.env.MINIMAX_API_KEY';
 ```
 
 ### ✅ ALWAYS DO THIS:
 ```typescript
 // GOOD - Use environment variables
-const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY;
+const apiKey = import.meta.env.VITE_MINIMAX_API_KEY; // frontend
 // or (server-side)
-const apiKey = process.env.OPENROUTER_API_KEY;
+const apiKey = process.env.MINIMAX_API_KEY; // backend
 
 // Validate it exists
 if (!apiKey) {
@@ -53,10 +50,8 @@ if (!apiKey) {
    cp .env.example .env.local
    ```
 
-2. Add your actual API keys (`.env.local` is in `.gitignore`)
+2. Add your MiniMax API key (`.env.local` is in `.gitignore`)
    ```
-   GEMINI_API_KEY=your_actual_key_here
-   OPENROUTER_API_KEY=your_actual_key_here
    MINIMAX_API_KEY=your_actual_key_here
    ```
 

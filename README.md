@@ -131,8 +131,7 @@ Intelligent learning analytics:
    # Copy the example environment file
    cp .env.example .env.local
    
-   # Add your API keys in .env.local
-   # GEMINI_API_KEY=your_gemini_key_here
+   # Add your MiniMax API key in .env.local
    # MINIMAX_API_KEY=your_minimax_key_here
    ```
 
@@ -165,8 +164,7 @@ npm run preview    # Preview production build locally
    - Vercel automatically detects Vite configuration
 
 3. Set environment variables in Vercel dashboard:
-   - `GEMINI_API_KEY`: Your Google AI Studio API key
-   - `MINIMAX_API_KEY`: Your MiniMax API key
+   - `MINIMAX_API_KEY`: Your MiniMax API key (get from https://console.minimax.io)
 
 4. Deploy:
    ```bash
@@ -177,7 +175,7 @@ npm run preview    # Preview production build locally
 - **Frontend**: Vite SPA (React + TypeScript + Tailwind CSS)
 - **Backend**: Vercel Functions (`/api/chat` endpoint for AI calls)
 - **Database**: IndexedDB (client-side session persistence)
-- **AI Models**: Gemini (Google), MiniMax (Anthropic API compatible)
+- **AI Models**: MiniMax (Anthropic API compatible)
 
 ---
 
@@ -197,7 +195,7 @@ physiobrain-ai/
 │   │   ├── Translator.tsx             # Medical↔Simple terminology bridge
 │   │   └── ui/                        # Reusable UI components
 │   ├── lib/
-│   │   ├── ai.ts                      # AI client (Gemini/MiniMax)
+│   │   ├── ai.ts                      # AI client (MiniMax via /api/chat)
 │   │   ├── db.ts                      # IndexedDB helpers (session persistence)
 │   │   ├── utils.ts                   # Utility functions
 │   │   └── minimax.ts                 # MiniMax API integration
