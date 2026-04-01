@@ -138,17 +138,13 @@ Return a JSON object EXACTLY matching this structure:
         </div>
         <div className="flex-1 overflow-y-auto p-8 pb-32 md:pb-12">
           {isLoading ? (
-            <div className="max-w-4xl mx-auto">
-              <div className="bg-surface rounded-xl shadow-card p-8">
+            <div className="max-w-4xl mx-auto flex items-center justify-center min-h-[40vh]">
+              <div className="bg-surface rounded-xl shadow-card p-8 w-full">
                 <SkeletonLoader variant="block" className="h-4 w-3/4 mb-4" />
                 <SkeletonLoader variant="block" className="h-4 w-1/2 mb-4" />
                 <SkeletonLoader variant="block" className="h-4 w-5/6 mb-4" />
                 <SkeletonLoader variant="block" className="h-4 w-2/3 mb-6" />
-                <SkeletonLoader variant="text" className="h-4 w-full mb-2" />
-                <SkeletonLoader variant="text" className="h-4 w-4/5 mb-2" />
-                <SkeletonLoader variant="text" className="h-4 w-3/4" />
-
-                <div className="flex flex-col items-center mt-8">
+                 <div className="flex flex-col items-center mt-8">
                   <ElegantSpinner size="md" />
                   <p className="mt-4 text-muted font-sans text-sm">
                     Generating evidence-based notes...
@@ -157,6 +153,9 @@ Return a JSON object EXACTLY matching this structure:
                     This usually takes 10-30 seconds
                   </p>
                 </div>
+                <SkeletonLoader variant="text" className="h-4 w-full mb-2" />
+                <SkeletonLoader variant="text" className="h-4 w-4/5 mb-2" />
+                <SkeletonLoader variant="text" className="h-4 w-3/4" />
               </div>
             </div>
           ) : error ? (
