@@ -75,8 +75,8 @@ Return a JSON object EXACTLY matching this structure:
   ];
 
   return (
-    <div className="h-full flex flex-col bg-background overflow-y-auto">
-      <div className="max-w-4xl mx-auto w-full flex flex-col gap-6 px-6 md:px-8 lg:px-12 py-6 md:py-8 pb-24 md:pb-10">
+    <div className="h-full flex flex-col bg-background">
+      <div className="max-w-4xl mx-auto w-full flex flex-col gap-6 px-6 md:px-8 lg:px-12 py-6 md:py-8">
       {/* Header Card */}
       <div className="bg-surface rounded-xl shadow-card p-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
@@ -136,7 +136,7 @@ Return a JSON object EXACTLY matching this structure:
           <Tag className="w-4 h-4 text-accent" />
           <h3 className="font-display text-sm uppercase tracking-wider">Structured Output</h3>
         </div>
-        <div className="flex-1 overflow-y-auto p-8">
+        <div className="flex-1 overflow-y-auto p-8 pb-32 md:pb-12">
           {isLoading ? (
             <div className="max-w-4xl mx-auto">
               <div className="bg-surface rounded-xl shadow-card p-8">
