@@ -1,0 +1,187 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Syne", sans-serif;
+  --font-sans: "DM Sans", sans-serif;
+  --font-mono: "Fira Code", monospace;
+
+  --color-bg: #F4F4F0;
+  --color-ink: #111111;
+  --color-accent: #FF3366;
+  --color-surface: #FFFFFF;
+  --color-muted: #E5E5E0;
+  --color-muted-text: #666666;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-bg);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+}
+
+.brutal-border {
+  border: 2px solid var(--color-ink);
+}
+
+.brutal-shadow {
+  box-shadow: 4px 4px 0px 0px var(--color-ink);
+}
+
+.brutal-shadow-sm {
+  box-shadow: 2px 2px 0px 0px var(--color-ink);
+}
+
+.brutal-shadow:active {
+  box-shadow: 0px 0px 0px 0px var(--color-ink);
+  transform: translate(4px, 4px);
+}
+
+.brutal-shadow-sm:active {
+  box-shadow: 0px 0px 0px 0px var(--color-ink);
+  transform: translate(2px, 2px);
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-bg);
+  border-left: 1px solid var(--color-muted);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-ink);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-accent);
+}
+
+.markdown-body {
+  font-family: var(--font-sans);
+  line-height: 1.6;
+}
+.markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+  color: var(--color-ink);
+}
+.markdown-body h1 { font-size: 2em; border-bottom: 2px solid var(--color-ink); padding-bottom: 0.3em; }
+.markdown-body h2 { font-size: 1.5em; border-bottom: 1px solid var(--color-ink); padding-bottom: 0.3em; }
+.markdown-body h3 { font-size: 1.25em; color: var(--color-accent); }
+.markdown-body h4 { font-size: 1.1em; text-transform: uppercase; letter-spacing: 0.05em; }
+.markdown-body p { margin-bottom: 1em; }
+.markdown-body ul { list-style-type: square; padding-left: 1.5em; margin-bottom: 1em; }
+.markdown-body ol { list-style-type: decimal-leading-zero; padding-left: 1.5em; margin-bottom: 1em; }
+.markdown-body li { margin-bottom: 0.5em; }
+.markdown-body strong { font-weight: 700; color: var(--color-ink); }
+.markdown-body em { font-style: italic; }
+.markdown-body blockquote {
+  border-left: 4px solid var(--color-accent);
+  padding-left: 1em;
+  margin-left: 0;
+  margin-right: 0;
+  color: var(--color-muted-text);
+  background: var(--color-surface);
+  padding: 1em;
+  border: 2px solid var(--color-ink);
+  box-shadow: 2px 2px 0px 0px var(--color-ink);
+}
+.markdown-body code { 
+  font-family: var(--font-mono); 
+  background: var(--color-muted); 
+  padding: 0.2em 0.4em; 
+  border-radius: 2px; 
+  font-size: 0.9em;
+  border: 1px solid var(--color-ink);
+}
+.markdown-body hr {
+  border: 0;
+  border-bottom: 2px dashed var(--color-ink);
+  margin: 2em 0;
+}
+
+/* Mobile-first touch optimizations */
+@media (max-width: 640px) {
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  button, a, select, input, textarea {
+    min-height: 44px;
+  }
+
+  input, textarea, select {
+    font-size: 16px !important; /* Prevents iOS zoom on focus */
+  }
+
+  .brutal-border {
+    border-width: 1.5px;
+  }
+
+  .brutal-shadow {
+    box-shadow: 3px 3px 0px 0px var(--color-ink);
+  }
+
+  .brutal-shadow-sm {
+    box-shadow: 2px 2px 0px 0px var(--color-ink);
+  }
+
+  .brutal-shadow:active {
+    box-shadow: 0px 0px 0px 0px var(--color-ink);
+    transform: translate(3px, 3px);
+  }
+
+  .brutal-shadow-sm:active {
+    box-shadow: 0px 0px 0px 0px var(--color-ink);
+    transform: translate(2px, 2px);
+  }
+}
+
+/* Ensure smooth scrolling */
+html {
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Hide scrollbar but keep functionality */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Improved touch targets */
+@media (pointer: coarse) {
+  button, [role="button"], select, input[type="checkbox"], input[type="radio"] {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* Better text rendering on mobile */
+@media (max-width: 768px) {
+  body {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+  }
+}
+
+/* Animation optimizations for reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
