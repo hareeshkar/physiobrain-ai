@@ -5,6 +5,8 @@ import { BookStyleExam } from './BookStyleExam';
 
 interface SimulatorProps {
   config: CaseConfig;
+  launchMode?: 'fresh' | 'resume';
+  resumeSessionId?: string | null;
   onExit: () => void;
   onComplete: (feedbackData: {
     type: 'simulator' | 'exam';
@@ -18,10 +20,26 @@ interface SimulatorProps {
   }) => void;
 }
 
-export function Simulator({ config, onExit, onComplete }: SimulatorProps) {
+export function Simulator({ config, launchMode = 'fresh', resumeSessionId = null, onExit, onComplete }: SimulatorProps) {
   if (config.caseStyle === 'open') {
-    return <BookStyleExam config={config} onExit={onExit} onComplete={onComplete} />;
+    return (
+      <BookStyleExam
+        config={config}
+        launchMode={launchMode}
+        resumeSessionId={resumeSessionId}
+        onExit={onExit}
+        onComplete={onComplete}
+      />
+    );
   }
 
-  return <InteractiveSimulator config={config} onExit={onExit} onComplete={onComplete} />;
+  return (
+    <InteractiveSimulator
+      config={config}
+      launchMode={launchMode}
+      resumeSessionId={resumeSessionId}
+      onExit={onExit}
+      onComplete={onComplete}
+    />
+  );
 }

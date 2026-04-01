@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { motion } from 'motion/react';
-import { Languages, ArrowRightLeft, Sparkles } from 'lucide-react';
+import { Languages, ArrowRightLeft } from 'lucide-react';
 import { generateContent } from '../lib/ai';
-import { cn } from '../lib/utils';
+import { ElegantSpinner } from './ui/ElegantSpinner';
+import { PillToggle } from './ui';
 
 export function Translator() {
   const [input, setInput] = useState('');
@@ -15,16 +15,16 @@ export function Translator() {
 
     setIsLoading(true);
     try {
-      const prompt = direction === 'to_medical' 
+      const prompt = direction === 'to_medical'
         ? `Translate this simple/student description into professional, academic physiotherapy terminology suitable for clinical documentation (SOAP notes) or exams.
-        
+
 Input: "${input}"
-        
+
 Output only the translated text, nothing else.`
         : `Translate this complex medical/physiotherapy terminology into simple, plain language suitable for explaining to a patient with no medical background.
-        
+
 Input: "${input}"
-        
+
 Output only the translated text, nothing else.`;
 
       const response = await generateContent(prompt, "You are an expert Physiotherapy Terminology Translator.");
@@ -37,73 +37,83 @@ Output only the translated text, nothing else.`;
     }
   };
 
+  const directionOptions = [
+    { value: 'to_medical' as const, label: 'Simple → Medical' },
+    { value: 'to_simple' as const, label: 'Medical → Simple' },
+  ];
+
   return (
-    <div className="max-w-4xl mx-auto h-full flex flex-col gap-8 py-8">
-      <div className="text-center">
-        <h2 className="font-display font-bold text-4xl uppercase mb-4 flex items-center justify-center gap-4">
-          <Languages className="w-10 h-10 text-accent" />
-          Terminology Translator
-        </h2>
-        <p className="font-mono text-sm text-muted-text uppercase tracking-widest">
-          Bridge the gap between patient language and clinical documentation
-        </p>
-      </div>
-
-      <div className="flex justify-center mb-4">
-        <div className="inline-flex bg-surface brutal-border p-1">
-          <button
-            onClick={() => setDirection('to_medical')}
-            className={cn(
-              "px-6 py-2 font-mono text-sm uppercase transition-colors",
-              direction === 'to_medical' ? "bg-ink text-surface" : "hover:bg-bg"
-            )}
-          >
-            Simple → Medical
-          </button>
-          <button
-            onClick={() => setDirection('to_simple')}
-            className={cn(
-              "px-6 py-2 font-mono text-sm uppercase transition-colors",
-              direction === 'to_simple' ? "bg-ink text-surface" : "hover:bg-bg"
-            )}
-          >
-            Medical → Simple
-          </button>
+    <div className="h-full flex flex-col bg-background overflow-y-auto">
+      <div className="max-w-4xl mx-auto w-full flex flex-col gap-6 px-6 md:px-8 lg:px-12 py-6 md:py-8">
+        {/* Header */}
+        <div className="text-center">
+          <h2 className="font-display font-semibold text-2xl md:text-4xl mb-3 md:mb-4 flex items-center justify-center gap-2 md:gap-4">
+            <Languages className="w-8 h-8 md:w-10 md:h-10 text-accent flex-shrink-0" />
+            <span>Terminology Translator</span>
+          </h2>
+          <p className="font-mono text-xs md:text-sm text-muted uppercase tracking-widest">
+            Bridge the gap between patient language and clinical documentation
+          </p>
         </div>
-      </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-6 items-center">
-        <div className="flex flex-col gap-2 h-64">
-          <label className="font-mono text-xs uppercase font-bold">Input Text</label>
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder={direction === 'to_medical' ? "e.g., pain when lifting arm..." : "e.g., Pain during active shoulder abduction, likely involving supraspinatus..."}
-            className="flex-1 p-4 bg-surface brutal-border brutal-shadow-sm font-sans resize-none focus:outline-none focus:ring-2 focus:ring-accent"
+        {/* Toggle */}
+        <div className="flex justify-center mb-2">
+          <PillToggle
+            options={directionOptions}
+            value={direction}
+            onChange={(value) => setDirection(value)}
           />
         </div>
 
-        <div className="flex justify-center">
+        {/* Layout: Vertical on mobile, 3-column on desktop */}
+        <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-4 md:gap-6 items-stretch">
+          {/* Input Section */}
+          <div className="flex flex-col gap-2 min-h-[200px] md:min-h-[300px]">
+            <label className="font-mono text-xs uppercase font-medium text-muted">Input Text</label>
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder={direction === 'to_medical' ? "e.g., pain when lifting arm..." : "e.g., Pain during active shoulder abduction, likely involving supraspinatus..."}
+              className="flex-1 p-3 md:p-4 bg-surface border border-subtle rounded-lg md:rounded-xl font-sans text-sm md:text-base resize-none focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent"
+            />
+          </div>
+
+          {/* Translate Button - Hidden on mobile, visible in grid on desktop */}
+          <div className="hidden md:flex justify-center items-center">
+            <button
+              onClick={handleTranslate}
+              disabled={isLoading || !input.trim()}
+              className="w-14 h-14 rounded-full bg-accent text-surface flex items-center justify-center hover:bg-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+            >
+              {isLoading ? <ElegantSpinner size="sm" /> : <ArrowRightLeft className="w-5 h-5" />}
+            </button>
+          </div>
+
+          {/* Output Section */}
+          <div className="flex flex-col gap-2 min-h-[200px] md:min-h-[300px]">
+            <label className="font-mono text-xs uppercase font-medium text-muted">Translated Output</label>
+            <div className="flex-1 p-3 md:p-4 bg-surface border border-subtle rounded-lg md:rounded-xl font-sans text-sm md:text-base overflow-y-auto relative">
+              {output ? (
+                <p className="text-base md:text-lg leading-relaxed">{output}</p>
+              ) : (
+                <p className="text-muted/60 italic text-center">
+                  Translation will appear here...
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Translate Button for Mobile */}
+        <div className="md:hidden">
           <button
             onClick={handleTranslate}
             disabled={isLoading || !input.trim()}
-            className="w-16 h-16 rounded-full bg-accent text-surface flex items-center justify-center brutal-border brutal-shadow hover:bg-ink transition-colors disabled:opacity-50 disabled:transform-none"
+            className="w-full px-4 py-3 bg-accent text-surface rounded-lg font-sans font-medium flex items-center justify-center gap-2 hover:bg-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isLoading ? <Sparkles className="w-6 h-6 animate-spin" /> : <ArrowRightLeft className="w-6 h-6" />}
+            {isLoading ? <ElegantSpinner size="sm" /> : <ArrowRightLeft className="w-5 h-5" />}
+            <span>{isLoading ? 'Translating...' : 'Translate'}</span>
           </button>
-        </div>
-
-        <div className="flex flex-col gap-2 h-64">
-          <label className="font-mono text-xs uppercase font-bold">Translated Output</label>
-          <div className="flex-1 p-4 bg-bg brutal-border font-sans overflow-y-auto relative">
-            {output ? (
-              <p className="text-lg">{output}</p>
-            ) : (
-              <p className="text-muted-text italic absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full text-center px-4">
-                Translation will appear here...
-              </p>
-            )}
-          </div>
         </div>
       </div>
     </div>

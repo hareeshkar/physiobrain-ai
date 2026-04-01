@@ -5,10 +5,16 @@ import { generateJson } from '../lib/ai';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { CaseConfig, BookCaseDetails } from '../types';
-import { saveActiveSession, getActiveSession, saveSessionToHistory, deleteActiveSession } from '../lib/db';
+import { saveActiveSession, getActiveSessionById, saveSessionToHistory, deleteActiveSession } from '../lib/db';
+import { ElegantSpinner } from './ui/ElegantSpinner';
+import { SkeletonLoader } from './ui/SkeletonLoader';
+import { Card } from './ui/Card';
+import { PrimaryButton, GhostButton } from './ui/Button';
 
 interface BookStyleExamProps {
   config: CaseConfig;
+  launchMode?: 'fresh' | 'resume';
+  resumeSessionId?: string | null;
   onExit: () => void;
   onComplete?: (feedbackData: {
     type: 'exam';
@@ -19,7 +25,13 @@ interface BookStyleExamProps {
   }) => void;
 }
 
-export function BookStyleExam({ config, onExit, onComplete }: BookStyleExamProps) {
+export function BookStyleExam({
+  config,
+  launchMode = 'fresh',
+  resumeSessionId = null,
+  onExit,
+  onComplete,
+}: BookStyleExamProps) {
   const [examState, setExamState] = useState<'generating' | 'active' | 'error' | 'resuming'>('resuming');
   const [bookCaseDetails, setBookCaseDetails] = useState<BookCaseDetails | null>(null);
   const [studentAnswers, setStudentAnswers] = useState('');
@@ -29,9 +41,20 @@ export function BookStyleExam({ config, onExit, onComplete }: BookStyleExamProps
   const [showErrorDialog, setShowErrorDialog] = useState(false);
   const [caseStudyExpanded, setCaseStudyExpanded] = useState(true);
   const [showAnswers, setShowAnswers] = useState(false);
+  const [expandedQuestions, setExpandedQuestions] = useState<Record<string, boolean>>({});
 
   const sessionIdRef = useRef<string>('');
-  const initializedRef = useRef(false);
+  const answerRef = useRef<HTMLTextAreaElement>(null);
+
+  const resizeAnswerField = useCallback(() => {
+    const field = answerRef.current;
+    if (!field) return;
+
+    field.style.height = 'auto';
+    const maxHeight = window.innerWidth < 768 ? 420 : 520;
+    field.style.height = `${Math.min(field.scrollHeight, maxHeight)}px`;
+    field.style.overflowY = field.scrollHeight > maxHeight ? 'auto' : 'hidden';
+  }, []);
 
   // Auto-save session to IndexedDB
   const saveSession = useCallback(async () => {
@@ -64,59 +87,43 @@ export function BookStyleExam({ config, onExit, onComplete }: BookStyleExamProps
     return () => clearTimeout(timeoutId);
   }, [saveSession]);
 
-  // Check for existing session on mount
   useEffect(() => {
-    if (initializedRef.current) return;
-    initializedRef.current = true;
+    resizeAnswerField();
+  }, [studentAnswers, resizeAnswerField, bookCaseDetails, examState]);
 
-    const checkExistingSession = async () => {
-      try {
-        const existing = await getActiveSession('exam');
-        if (existing && existing.config.module === config.module) {
-          // Resume existing session
-          sessionIdRef.current = existing.id;
-          setBookCaseDetails(existing.caseDetails || null);
-          setStudentAnswers(existing.studentAnswers || '');
-          setExamState('active');
+  useEffect(() => {
+    setIsExamSubmitted(false);
+    setStudentAnswers('');
+    setShowAnswers(false);
+    setCaseStudyExpanded(true);
+    setExpandedQuestions({});
+    setBookCaseDetails(null);
+    sessionIdRef.current = '';
 
-          // If session was ended, go to feedback view instead
-          if (existing.ended) {
-            if (onComplete) {
-              onComplete({
-                type: 'exam',
-                config: existing.config,
-                caseDetails: existing.caseDetails || null,
-                studentAnswers: existing.studentAnswers || '',
-                feedback: undefined, // FeedbackView will generate
-              });
-            }
+    const startExam = async () => {
+      if (launchMode === 'resume' && resumeSessionId) {
+        try {
+          const active = await getActiveSessionById(resumeSessionId);
+          if (active && active.type === 'exam') {
+            sessionIdRef.current = active.id;
+            setBookCaseDetails(active.caseDetails as BookCaseDetails || null);
+            setStudentAnswers(active.studentAnswers || '');
+            setIsExamSubmitted(Boolean(active.ended));
+            setShowAnswers(Boolean(active.ended));
+            setExpandedQuestions({});
+            setExamState('active');
             return;
           }
-
-          // Explicitly save after resuming to update lastUpdatedAt
-          saveActiveSession({
-            id: existing.id,
-            type: 'exam',
-            config,
-            caseDetails: existing.caseDetails,
-            messages: [],
-            clinicalNotes: '',
-            studentAnswers: existing.studentAnswers || '',
-            startedAt: existing.startedAt,
-            lastUpdatedAt: Date.now(),
-            ended: false,
-          });
-          return;
+        } catch (e) {
+          console.error('Failed to resume exam session:', e);
         }
-      } catch (e) {
-        console.error('Failed to check existing session:', e);
       }
-      // No existing session - generate new
+
       generateExam();
     };
 
-    checkExistingSession();
-  }, [config]);
+    startExam();
+  }, [config, launchMode, resumeSessionId]);
 
   // Generate prompt - more concise case study
   const generatePrompt = useCallback(() => {
@@ -134,18 +141,23 @@ ${config.specificTopic ? `- Topic: ${config.specificTopic}` : ''}
 TASK: Create a concise clinical case study and 5 exam questions totaling exactly 100 marks.
 
 CASE STUDY REQUIREMENTS:
-Write 3-4 SHORT paragraphs ONLY:
-1. Patient demographics + chief complaint (1 short paragraph)
-2. Subjective history - onset, mechanism, symptoms, aggravating/easing factors (1-2 paragraphs)
-3. Objective findings - key ROM, strength, special tests, palpation (1 short paragraph)
-
-Keep it BREIF - this is for an exam, not a textbook. 400-600 words MAX.
+Write 2-3 SHORT paragraphs ONLY.
+- Keep the stem simple and student-friendly.
+- Focus on the essentials a student needs to answer the questions.
+- Do not overload with unnecessary details.
+- Keep the case study around 250-400 words.
 
 QUESTIONS REQUIREMENTS:
 Generate exactly 5 questions that:
-- Align with "${config.questionFocus}" focus
+- Use clear, plain language.
+- Ask one thing at a time.
+- Avoid long, dense, multi-part stems.
+- Keep question stems about 40-50 words max when possible.
+- Make the questions feel appropriate for a student, not an expert paper.
+- Mix marks so the paper feels balanced: a few higher-value reasoning questions and a few shorter questions.
 - Total marks = 100
-- Include clinical reasoning, not just factual recall
+- Include clinical reasoning, not just factual recall.
+- If a question is broader, make the marks reflect the complexity, but keep the stem readable.
 
 Return valid JSON only:
 {
@@ -159,6 +171,12 @@ Return valid JSON only:
   const generateExam = async () => {
     setExamState('generating');
     setErrorMessage(null);
+    setIsExamSubmitted(false);
+    setStudentAnswers('');
+    setShowAnswers(false);
+    setCaseStudyExpanded(true);
+    setBookCaseDetails(null);
+    sessionIdRef.current = '';
 
     try {
       const data = await generateJson<BookCaseDetails>(generatePrompt(), "You are an expert physiotherapy professor. Write CONCISE exam cases. 3-4 short paragraphs max. Do not be verbose.");
@@ -225,7 +243,7 @@ Return valid JSON only:
       // Move session from active to history as "ended" (FeedbackView will generate feedback)
       if (sessionIdRef.current) {
         try {
-          const activeSession = await getActiveSession('exam');
+          const activeSession = await getActiveSessionById(sessionIdRef.current);
           if (activeSession && activeSession.id === sessionIdRef.current) {
             const duration = Math.floor((Date.now() - activeSession.startedAt) / 1000);
             await saveSessionToHistory({
@@ -280,61 +298,54 @@ Return valid JSON only:
     onExit();
   };
 
-  // Error Dialog
-  const ErrorDialog = () => (
-    <AnimatePresence>
-      {showErrorDialog && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/90 backdrop-blur-sm p-4"
-        >
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            className="w-full max-w-md bg-surface brutal-border brutal-shadow p-8"
-          >
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-12 h-12 bg-accent flex items-center justify-center brutal-border">
-                <AlertCircle className="text-surface w-6 h-6" />
-              </div>
-              <h2 className="text-2xl font-display font-bold uppercase tracking-tight">Generation Issue</h2>
-            </div>
-            <p className="text-muted-text mb-2 font-sans">{errorMessage || "The exam generation is taking longer than expected."}</p>
-            <p className="text-muted-text mb-8 font-sans text-sm">This process may take up to 5 minutes depending on complexity.</p>
-            <div className="flex flex-col gap-3">
-              <button onClick={handleRetry} className="w-full bg-accent text-surface p-4 font-display font-bold uppercase tracking-wider flex items-center justify-center gap-2 brutal-border brutal-shadow-sm hover:bg-ink transition-colors group">
-                <RefreshCw className="w-5 h-5 group-hover:rotate-180 transition-transform" />Try Again
-              </button>
-              <button onClick={handleReturnToDashboard} className="w-full bg-bg text-ink p-4 font-display font-bold uppercase tracking-wider flex items-center justify-center gap-2 brutal-border brutal-shadow-sm hover:bg-ink hover:text-surface transition-colors">
-                Return to Dashboard
-              </button>
-            </div>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+  // Inline Error Card
+  const ErrorCard = () => (
+    <Card className="max-w-md mx-auto p-6 text-center">
+      <div className="w-12 h-12 bg-error/10 rounded-full flex items-center justify-center mx-auto mb-4">
+        <AlertCircle className="text-error w-6 h-6" />
+      </div>
+      <h3 className="font-display text-xl font-semibold mb-2">Generation Issue</h3>
+      <p className="text-muted text-sm mb-6">
+        {errorMessage || "The exam generation is taking longer than expected."}
+      </p>
+      <div className="flex flex-col gap-3">
+        <PrimaryButton onClick={handleRetry} className="w-full">
+          <RefreshCw className="w-4 h-4 mr-2" />
+          Try Again
+        </PrimaryButton>
+        <GhostButton onClick={handleReturnToDashboard} className="w-full">
+          Return to Dashboard
+        </GhostButton>
+      </div>
+    </Card>
   );
 
   // Loading State
   if (examState === 'generating') {
     return (
       <div className="h-full flex flex-col items-center justify-center p-6">
-        <div className="relative mb-6">
-          <RefreshCw className="w-16 h-16 text-accent animate-spin" />
-          <div className="absolute inset-0 bg-accent/20 rounded-full animate-ping" />
-        </div>
-        <h2 className="font-display font-bold text-2xl md:text-3xl uppercase mb-2 tracking-tight">Generating Examination...</h2>
-        <p className="font-mono text-xs md:text-sm text-muted-text uppercase text-center max-w-md mb-4">
-          Crafting clinical case study and exam questions based on your parameters.
-        </p>
-        <div className="flex items-center gap-2 text-muted-text">
-          <Clock className="w-4 h-4" />
-          <span className="font-mono text-xs uppercase">This may take up to 5 minutes</span>
-        </div>
-        <ErrorDialog />
+        <Card className="max-w-md mx-auto p-8 text-center">
+          <div className="mb-6">
+            <ElegantSpinner size="lg" className="mx-auto" />
+          </div>
+          <h2 className="font-display text-2xl md:text-3xl font-semibold mb-2">
+            Generating Examination...
+          </h2>
+          <p className="text-muted text-sm mb-4">
+            Crafting clinical case study and exam questions based on your parameters.
+          </p>
+          <div className="flex items-center justify-center gap-2 text-muted text-xs mb-6">
+            <Clock className="w-4 h-4" />
+            <span>This may take up to 5 minutes</span>
+          </div>
+          {/* Skeleton placeholders for questions */}
+          <div className="space-y-3">
+            <SkeletonLoader variant="block" height={60} />
+            <SkeletonLoader variant="block" height={60} />
+            <SkeletonLoader variant="block" height={60} />
+          </div>
+        </Card>
+        {showErrorDialog && <ErrorCard />}
       </div>
     );
   }
@@ -343,44 +354,42 @@ Return valid JSON only:
 
   return (
     <div className="h-full flex flex-col gap-4 lg:gap-6 overflow-hidden">
-      <ErrorDialog />
-
       {/* Header Bar */}
       <div className="flex justify-between items-center px-2">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-accent flex items-center justify-center brutal-border">
-            <FileText className="text-surface w-5 h-5" />
+          <div className="w-10 h-10 bg-accent/10 rounded-full flex items-center justify-center">
+            <FileText className="text-accent w-5 h-5" />
           </div>
           <div>
-            <h1 className="font-display font-bold uppercase text-lg tracking-tight">{config.module} Examination</h1>
-            <span className="font-mono text-xs text-muted-text uppercase">{config.questionFocus} • {totalMarks} Marks</span>
+            <h1 className="font-display font-semibold text-lg">{config.module} Examination</h1>
+            <span className="font-mono text-xs text-muted uppercase">{config.questionFocus} • {totalMarks} Marks</span>
           </div>
         </div>
         <div className="flex items-center gap-2">
           {isExamSubmitted && (
-            <div className="flex items-center gap-2 bg-green-100 text-green-800 px-3 py-1 brutal-border font-mono text-xs uppercase">
+            <div className="flex items-center gap-2 bg-success/10 text-success px-3 py-1 rounded-full font-sans text-xs font-medium">
               <CheckCircle className="w-4 h-4" /> Submitted
             </div>
           )}
-          <button onClick={handleExitExam} className="w-10 h-10 bg-surface brutal-border flex items-center justify-center hover:bg-ink hover:text-surface transition-colors">
-            <X className="w-5 h-5" />
+          <button onClick={handleExitExam} className="w-10 h-10 flex items-center justify-center hover:bg-subtle rounded-full transition-colors">
+            <X className="w-5 h-5 text-muted hover:text-ink" />
           </button>
         </div>
       </div>
 
       {/* Main Content - Scrollable */}
-      <div className="flex-1 overflow-y-auto space-y-4 p-2 md:p-0">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden space-y-4 p-2 md:p-0">
         {/* Case Study Card - Collapsible */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-surface brutal-border brutal-shadow">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-surface rounded-xl shadow-card overflow-hidden">
           <button
             onClick={() => setCaseStudyExpanded(!caseStudyExpanded)}
-            className="w-full p-3 md:p-4 flex items-center justify-between bg-bg border-b-2 border-ink hover:bg-muted/30 transition-colors"
+            className="w-full p-3 md:p-4 flex items-center justify-between hover:bg-subtle/50 transition-colors"
           >
             <div className="flex items-center gap-3">
               <BookOpen className="w-5 h-5 text-accent" />
-              <span className="font-display font-bold uppercase text-sm tracking-wide">Clinical Case Study</span>
+              <span className="font-display font-semibold text-sm">Clinical Case Study</span>
             </div>
-            {caseStudyExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+            {caseStudyExpanded ? <ChevronUp className="w-5 h-5 text-muted" /> : <ChevronDown className="w-5 h-5 text-muted" />}
           </button>
 
           <AnimatePresence>
@@ -391,7 +400,7 @@ Return valid JSON only:
                 exit={{ height: 0, opacity: 0 }}
                 className="overflow-hidden"
               >
-                <div className="p-4 md:p-5 text-sm leading-relaxed markdown-body">
+                <div className="p-4 md:p-5 text-sm leading-relaxed markdown-body border-t border-subtle">
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>{bookCaseDetails?.caseStudy || ''}</ReactMarkdown>
                 </div>
               </motion.div>
@@ -399,61 +408,101 @@ Return valid JSON only:
           </AnimatePresence>
         </motion.div>
 
-        {/* Questions Table */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="bg-surface brutal-border brutal-shadow overflow-hidden">
-          <div className="p-3 md:p-4 bg-ink text-surface flex items-center gap-3">
+        {/* Questions Card */}
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="bg-surface rounded-xl shadow-card overflow-hidden">
+          <div className="p-3 md:p-4 flex items-center gap-3 border-b border-subtle">
             <PenTool className="w-5 h-5 text-accent" />
-            <span className="font-display font-bold uppercase text-sm tracking-wide">Examination Questions</span>
+            <span className="font-display font-semibold text-sm">Examination Questions</span>
           </div>
 
-          {/* Questions Grid */}
-          <div className="divide-y divide-muted">
+          {/* Questions List */}
+          <div className="divide-y divide-subtle">
             {bookCaseDetails?.questions.map((q, i) => (
-              <div key={q.id} className="p-4 md:p-5 hover:bg-muted/20 transition-colors">
-                <div className="flex items-start gap-4">
-                  <div className="flex-shrink-0 w-10 h-10 bg-accent text-surface flex items-center justify-center font-display font-bold brutal-border">
+              <div key={q.id} className="hover:bg-subtle/30 transition-colors">
+                {(() => {
+                  const preview = q.text.length > 120 ? `${q.text.slice(0, 120).trim()}...` : q.text;
+
+                  return (
+                <button
+                  type="button"
+                  onClick={() => setExpandedQuestions(prev => ({ ...prev, [q.id]: !prev[q.id] }))}
+                  className="w-full p-4 md:p-5 flex items-start gap-4 text-left"
+                >
+                  <div className="flex-shrink-0 w-8 h-8 bg-accent rounded-full flex items-center justify-center text-white font-sans font-semibold text-sm">
                     {i + 1}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-sans text-sm md:text-base leading-relaxed mb-3">{q.text}</p>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs uppercase text-muted-text">Marks:</span>
-                      <span className="inline-flex items-center justify-center px-3 py-1 bg-accent text-surface font-mono text-xs font-bold brutal-border">
-                        {q.marks}
-                      </span>
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="font-sans text-sm md:text-base leading-relaxed pr-2">
+                        {expandedQuestions[q.id] ? q.text : preview}
+                      </p>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <span className="inline-flex items-center justify-center px-3 py-1 bg-accent/10 text-accent font-mono text-xs font-medium rounded-full">
+                          {q.marks}
+                        </span>
+                        {expandedQuestions[q.id] ? <ChevronUp className="w-4 h-4 text-muted" /> : <ChevronDown className="w-4 h-4 text-muted" />}
+                      </div>
                     </div>
+                    {!expandedQuestions[q.id] && (
+                      <p className="mt-2 text-xs md:text-sm text-muted">
+                        Tap to expand and write your answer below.
+                      </p>
+                    )}
                   </div>
-                </div>
+                </button>
+                  );
+                })()}
               </div>
             ))}
           </div>
         </motion.div>
 
         {/* Answer Sheet */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="bg-surface brutal-border brutal-shadow overflow-hidden">
-          <div className="p-3 md:p-4 bg-ink text-surface flex items-center justify-between">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="bg-surface rounded-xl shadow-card overflow-hidden">
+          <div className="p-3 md:p-4 flex items-center justify-between border-b border-subtle gap-3">
             <div className="flex items-center gap-3">
               <PenTool className="w-5 h-5 text-accent" />
-              <span className="font-display font-bold uppercase text-sm tracking-wide">Your Answers</span>
+              <span className="font-display font-semibold text-sm">Your Answers</span>
             </div>
             <button
               onClick={submitAnswers}
               disabled={isLoading || !studentAnswers.trim() || isExamSubmitted}
-              className="bg-accent text-surface px-4 py-2 font-display font-bold uppercase text-xs brutal-border brutal-shadow-sm hover:bg-ink transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="bg-accent text-white px-4 py-2 rounded-full font-sans text-sm font-medium shadow-button hover:bg-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
             >
-              {isLoading ? 'Grading...' : isExamSubmitted ? 'Submitted' : 'Submit Answers'}
+              {isLoading ? (
+                <>
+                  <ElegantSpinner size="sm" className="inline mr-2" />
+                  Grading...
+                </>
+              ) : isExamSubmitted ? (
+                <>
+                  <CheckCircle className="w-4 h-4 inline mr-2" />
+                  Submitted
+                </>
+              ) : (
+                'Submit Answers'
+              )}
             </button>
           </div>
           <textarea
+            ref={answerRef}
             value={studentAnswers}
-            onChange={(e) => setStudentAnswers(e.target.value)}
-            placeholder="Write your answers here. Number them 1-5 to match the questions. Be concise but thorough."
-            className="w-full p-4 bg-transparent resize-none font-mono text-sm leading-relaxed min-h-[200px] focus:outline-none"
+            onChange={(e) => {
+              setStudentAnswers(e.target.value);
+              resizeAnswerField();
+            }}
+            placeholder="Write your answers here. Number them 1-5 to match the questions. The box will grow as you type."
+            className="w-full p-4 bg-transparent resize-none font-mono text-sm md:text-base leading-relaxed min-h-[240px] md:min-h-[320px] focus:outline-none focus:ring-2 focus:ring-accent/20"
             disabled={isLoading || isExamSubmitted}
           />
         </motion.div>
 
-              </div>
+        {showErrorDialog && (
+          <div className="mt-4">
+            <ErrorCard />
+          </div>
+        )}
+      </div>
     </div>
   );
 }

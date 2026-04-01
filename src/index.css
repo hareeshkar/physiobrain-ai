@@ -1,8 +1,9 @@
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 @theme {
-  --font-display: "Cormorant Garamond", serif;
-  --font-sans: "DM Sans", sans-serif;
+  --font-display: "Cormorant Garamond", Georgia, serif;
+  --font-sans: "DM Sans", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", monospace;
 
   --color-background: #FAFAF8;
@@ -11,6 +12,9 @@
   --color-muted: #6B6B6B;
   --color-accent: #C45D3E;
   --color-subtle: #E8E8E4;
+  --color-success: #2D7D5A;
+  --color-error: #B84A3C;
+  --color-surface-hover: #F5F5F2;
 }
 
 body {
@@ -19,36 +23,95 @@ body {
   color: var(--color-ink);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+}
+
+/* Prevent horizontal scrolling on mobile */
+@media (max-width: 1024px) {
+  body, html {
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+  
+  #root {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
 }
 
 h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-display);
 }
 
-.brutal-border {
-  border: 2px solid var(--color-ink);
-}
-
-.brutal-shadow {
-  box-shadow: 4px 4px 0px 0px var(--color-ink);
-}
-
-.brutal-shadow-sm {
-  box-shadow: 2px 2px 0px 0px var(--color-ink);
-}
-
-.brutal-shadow:active {
-  box-shadow: 0px 0px 0px 0px var(--color-ink);
-  transform: translate(4px, 4px);
-}
-
-.brutal-shadow-sm:active {
-  box-shadow: 0px 0px 0px 0px var(--color-ink);
-  transform: translate(2px, 2px);
+/* Subtle shadow utilities */
+.shadow-card {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
 }
 
 .shadow-elevated {
-  box-shadow: 0 4px 24px -4px rgba(26, 26, 26, 0.12);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+}
+
+/* Skeleton shimmer animation */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--color-subtle) 25%, var(--color-surface-hover) 50%, var(--color-subtle) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+/* Elegant spinner animation */
+@keyframes elegant-spin {
+  0% { transform: rotate(0deg); opacity: 1; }
+  50% { opacity: 0.5; }
+  100% { transform: rotate(360deg); opacity: 1; }
+}
+
+/* Mobile-first base styles */
+@media (max-width: 640px) {
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  button, a, select, input, textarea {
+    min-height: 44px;
+  }
+}
+
+/* Improved touch targets */
+@media (pointer: coarse) {
+  button, [role="button"], select, input[type="checkbox"], input[type="radio"] {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* Better text rendering */
+@media (max-width: 768px) {
+  body {
+    -webkit-text-size-adjust: 100%;
+  }
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Safe area for bottom nav */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
 }
 
 /* Custom Scrollbar */
@@ -79,7 +142,7 @@ h1, h2, h3, h4, h5, h6 {
   color: var(--color-ink);
 }
 .markdown-body h1 { font-size: 1.25em; border-bottom: 2px solid var(--color-ink); padding-bottom: 0.25em; }
-.markdown-body h2 { font-size: 1.1em; border-bottom: 1px solid var(--color-muted); padding-bottom: 0.2em; }
+.markdown-body h2 { font-size: 1.1em; border-bottom: 1px solid var(--color-subtle); padding-bottom: 0.2em; }
 .markdown-body h3 { font-size: 1em; color: var(--color-accent); font-weight: 700; }
 .markdown-body h4 { font-size: 0.95em; text-transform: uppercase; letter-spacing: 0.05em; }
 .markdown-body p { margin-bottom: 0.75em; }
@@ -93,18 +156,18 @@ h1, h2, h3, h4, h5, h6 {
   padding-left: 0.75em;
   margin-left: 0;
   margin-right: 0;
-  color: var(--color-muted-text);
+  color: var(--color-muted);
 }
 .markdown-body code {
   font-family: var(--font-mono);
-  background: var(--color-muted);
+  background: var(--color-subtle);
   padding: 0.15em 0.3em;
   border-radius: 2px;
   font-size: 0.85em;
 }
 .markdown-body hr {
   border: 0;
-  border-bottom: 1px dashed var(--color-muted);
+  border-bottom: 1px dashed var(--color-subtle);
   margin: 1em 0;
 }
 /* Tables in markdown */
@@ -129,50 +192,7 @@ h1, h2, h3, h4, h5, h6 {
   letter-spacing: 0.05em;
 }
 .markdown-body tr:nth-child(even) td {
-  background: var(--color-muted);
-}
-
-/* Mobile-first touch optimizations */
-@media (max-width: 640px) {
-  * {
-    -webkit-tap-highlight-color: transparent;
-  }
-
-  button, a, select, input, textarea {
-    min-height: 44px;
-  }
-
-  input, textarea, select {
-    font-size: 16px !important; /* Prevents iOS zoom on focus */
-  }
-
-  .brutal-border {
-    border-width: 1.5px;
-  }
-
-  .brutal-shadow {
-    box-shadow: 3px 3px 0px 0px var(--color-ink);
-  }
-
-  .brutal-shadow-sm {
-    box-shadow: 2px 2px 0px 0px var(--color-ink);
-  }
-
-  .brutal-shadow:active {
-    box-shadow: 0px 0px 0px 0px var(--color-ink);
-    transform: translate(3px, 3px);
-  }
-
-  .brutal-shadow-sm:active {
-    box-shadow: 0px 0px 0px 0px var(--color-ink);
-    transform: translate(2px, 2px);
-  }
-}
-
-/* Ensure smooth scrolling */
-html {
-  scroll-behavior: smooth;
-  -webkit-overflow-scrolling: touch;
+  background: var(--color-subtle);
 }
 
 /* Hide scrollbar but keep functionality */
@@ -182,22 +202,6 @@ html {
 }
 .no-scrollbar::-webkit-scrollbar {
   display: none;
-}
-
-/* Improved touch targets */
-@media (pointer: coarse) {
-  button, [role="button"], select, input[type="checkbox"], input[type="radio"] {
-    min-width: 44px;
-    min-height: 44px;
-  }
-}
-
-/* Better text rendering on mobile */
-@media (max-width: 768px) {
-  body {
-    -webkit-text-size-adjust: 100%;
-    text-rendering: optimizeLegibility;
-  }
 }
 
 /* Animation optimizations for reduced motion */

@@ -6,3 +6,39 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# IDE & Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.c9/
+
+# OS
+Thumbs.db
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Test files
+*.test.ts
+*.spec.ts
+test-*.ts
+
+# Temp & backup files
+*.tmp
+*.bak
+*.swp
+tmp/
+temp/
+
+# Secrets & sensitive data
+.env.local
+.env.*.local
+secrets/
+*.pem
+*.key
+*.crt

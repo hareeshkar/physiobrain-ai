@@ -172,6 +172,38 @@ export async function getActiveSession(type: 'simulator' | 'exam'): Promise<Acti
   });
 }
 
+export async function getActiveSessionById(id: string): Promise<ActiveSession | undefined> {
+  const db = await initDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('activeSessions', 'readonly');
+    const request = tx.objectStore('activeSessions').get(id);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+export async function getActiveSessions(limit = 50): Promise<ActiveSession[]> {
+  const db = await initDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('activeSessions', 'readonly');
+    const store = tx.objectStore('activeSessions');
+    const index = store.index('lastUpdatedAt');
+    const request = index.openCursor(null, 'prev');
+
+    const results: ActiveSession[] = [];
+    request.onsuccess = (event) => {
+      const cursor = (event.target as IDBRequest).result;
+      if (cursor && results.length < limit) {
+        results.push(cursor.value);
+        cursor.continue();
+      } else {
+        resolve(results);
+      }
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
 export async function deleteActiveSession(id: string): Promise<void> {
   const db = await initDB();
   return new Promise((resolve, reject) => {

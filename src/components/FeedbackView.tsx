@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { CheckCircle, Clock, BookOpen, User, Brain, ArrowLeft, X, FileText, MessageSquare, RefreshCw } from 'lucide-react';
+import { CheckCircle, X, FileText, MessageSquare } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { CaseConfig } from '../types';
 import { generateContent } from '../lib/ai';
 import { getSessionById, saveSessionToHistory } from '../lib/db';
+import { ElegantSpinner } from './ui/ElegantSpinner';
+import { PrimaryButton } from './ui/Button';
+import { Card } from './ui';
 
 interface FeedbackViewProps {
   type: 'simulator' | 'exam';
@@ -14,10 +17,11 @@ interface FeedbackViewProps {
   messages?: any[];
   clinicalNotes?: string;
   studentAnswers?: string;
-  feedback?: string; // If provided, show immediately
+  feedback?: string;
   diagnosis?: string;
   sessionId?: string;
   onClose: () => void;
+  onViewHistory?: () => void;
 }
 
 export function FeedbackView({
@@ -31,12 +35,12 @@ export function FeedbackView({
   diagnosis,
   sessionId,
   onClose,
+  onViewHistory,
 }: FeedbackViewProps) {
   const [feedback, setFeedback] = useState(initialFeedback || '');
   const [isGenerating, setIsGenerating] = useState(!initialFeedback);
   const [error, setError] = useState<string | null>(null);
 
-  // Generate feedback if not provided
   useEffect(() => {
     if (initialFeedback) {
       setFeedback(initialFeedback);
@@ -96,7 +100,6 @@ FORMAT YOUR RESPONSE IN MARKDOWN:
 
           systemInstruction = "You are an expert Physiotherapy Clinical Educator.";
         } else {
-          // Exam type
           prompt = `You are an expert Physiotherapy Professor grading a student exam.
 
 CONTEXT:
@@ -138,7 +141,6 @@ For each question:
         const response = await generateContent(prompt, systemInstruction);
         setFeedback(response);
 
-        // Save feedback to session in history if we have a session ID
         if (sessionId) {
           try {
             const session = await getSessionById(sessionId);
@@ -161,69 +163,63 @@ For each question:
     };
 
     generateFeedback();
-  }, [type, config, caseDetails, messages, clinicalNotes, studentAnswers, diagnosis, initialFeedback]);
+  }, [type, config, caseDetails, messages, clinicalNotes, studentAnswers, diagnosis, initialFeedback, sessionId]);
 
   return (
-    <div className="h-full flex flex-col bg-bg">
+    <div className="h-full flex flex-col bg-background">
       {/* Fixed Header */}
-      <header className="p-4 md:p-6 border-b-2 border-ink bg-ink text-surface flex items-center justify-between shrink-0">
+      <header className="p-4 md:p-6 border-b border-subtle bg-surface flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
           {isGenerating ? (
-            <RefreshCw className="w-6 h-6 text-accent animate-spin" />
+            <ElegantSpinner size="sm" />
           ) : (
-            <CheckCircle className="w-6 h-6 text-green-400" />
+            <CheckCircle className="w-6 h-6 text-accent" />
           )}
           <div>
-            <h1 className="font-display font-bold uppercase text-lg">
+            <h1 className="font-sans font-semibold text-lg">
               {isGenerating ? 'Generating Feedback...' : 'Session Complete'}
             </h1>
-            <span className="font-mono text-xs opacity-70">
+            <span className="font-mono text-xs text-muted">
               {config.module} • {type === 'exam' ? 'Written Exam' : 'Patient Simulation'}
             </span>
           </div>
         </div>
-        <button
-          onClick={onClose}
-          className="w-10 h-10 bg-surface text-ink flex items-center justify-center hover:bg-accent hover:text-surface transition-colors"
-        >
-          <X className="w-5 h-5" />
-        </button>
+        <div className="flex items-center gap-2">
+          {onViewHistory && (
+            <button
+              onClick={onViewHistory}
+              className="px-3 py-2 rounded-lg bg-subtle text-muted hover:bg-accent/10 hover:text-ink transition-colors text-xs"
+            >
+              View History
+            </button>
+          )}
+          <button
+            onClick={onClose}
+            className="w-10 h-10 bg-subtle text-ink rounded-full flex items-center justify-center hover:bg-accent hover:text-surface transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
       </header>
 
       {/* Scrollable Content */}
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-4xl mx-auto p-4 md:p-6 space-y-6">
           {isGenerating ? (
-            /* Loading State */
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="flex flex-col items-center justify-center py-20"
-            >
-              <div className="relative mb-6">
-                <RefreshCw className="w-16 h-16 text-accent animate-spin" />
-                <div className="absolute inset-0 bg-accent/20 rounded-full animate-ping" />
-              </div>
-              <h2 className="font-display font-bold text-2xl mb-2">Analyzing Your Performance</h2>
-              <p className="font-mono text-sm text-muted-text uppercase">
-                This may take a few moments...
+            <div className="flex flex-col items-center justify-center py-20">
+              <ElegantSpinner size="lg" />
+              <h2 className="font-display text-2xl mt-6 mb-2">Analyzing Your Performance</h2>
+              <p className="font-mono text-sm text-muted uppercase tracking-wider">
+                This may take a moment...
               </p>
-            </motion.div>
+            </div>
           ) : error ? (
-            /* Error State */
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="bg-surface brutal-border brutal-shadow p-6 text-center"
-            >
-              <p className="text-red-500 mb-4">{error}</p>
-              <button
-                onClick={() => window.location.reload()}
-                className="bg-accent text-surface px-4 py-2 font-display font-bold uppercase text-sm brutal-border"
-              >
+            <Card className="p-6 text-center">
+              <p className="text-error mb-4">{error}</p>
+              <PrimaryButton onClick={() => window.location.reload()}>
                 Try Again
-              </button>
-            </motion.div>
+              </PrimaryButton>
+            </Card>
           ) : (
             <>
               {/* Diagnosis Card (Simulator only) */}
@@ -231,13 +227,18 @@ For each question:
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="bg-surface brutal-border brutal-shadow p-5"
+                  className="bg-surface rounded-xl shadow-card overflow-hidden"
                 >
-                  <div className="flex items-center gap-2 mb-3">
-                    <User className="w-5 h-5 text-accent" />
-                    <span className="font-display font-bold uppercase text-sm">Hidden Diagnosis</span>
+                  <div className="h-1 bg-accent" />
+                  <div className="p-5">
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="w-8 h-8 bg-accent/10 rounded-full flex items-center justify-center">
+                        <CheckCircle className="w-4 h-4 text-accent" />
+                      </div>
+                      <span className="font-display font-semibold uppercase text-sm">Hidden Diagnosis</span>
+                    </div>
+                    <p className="font-sans text-base leading-relaxed">{diagnosis}</p>
                   </div>
-                  <p className="font-sans text-base">{diagnosis}</p>
                 </motion.div>
               )}
 
@@ -246,14 +247,19 @@ For each question:
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="bg-surface brutal-border brutal-shadow p-5"
+                  className="bg-surface rounded-xl shadow-card overflow-hidden"
                 >
-                  <div className="flex items-center gap-2 mb-3">
-                    <BookOpen className="w-5 h-5 text-accent" />
-                    <span className="font-display font-bold uppercase text-sm">Case Study</span>
-                  </div>
-                  <div className="markdown-body text-sm">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{caseDetails.caseStudy}</ReactMarkdown>
+                  <div className="h-1 bg-ink" />
+                  <div className="p-5">
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="w-8 h-8 bg-ink/10 rounded-full flex items-center justify-center">
+                        <FileText className="w-4 h-4 text-ink" />
+                      </div>
+                      <span className="font-display font-semibold uppercase text-sm">Case Study</span>
+                    </div>
+                    <div className="markdown-body text-sm">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{caseDetails.caseStudy}</ReactMarkdown>
+                    </div>
                   </div>
                 </motion.div>
               )}
@@ -263,14 +269,19 @@ For each question:
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.1 }}
-                className="bg-surface brutal-border brutal-shadow overflow-hidden"
+                className="bg-surface rounded-xl shadow-card overflow-hidden"
               >
-                <div className="p-4 bg-accent text-surface flex items-center gap-2">
-                  <Brain className="w-5 h-5" />
-                  <span className="font-display font-bold uppercase text-sm">Professor's Feedback</span>
-                </div>
-                <div className="p-5 markdown-body text-sm leading-relaxed">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{feedback}</ReactMarkdown>
+                <div className="h-1 bg-accent" />
+                <div className="p-5">
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-8 h-8 bg-accent/10 rounded-full flex items-center justify-center">
+                      <CheckCircle className="w-4 h-4 text-accent" />
+                    </div>
+                    <span className="font-display font-semibold uppercase text-sm">Professor's Feedback</span>
+                  </div>
+                  <div className="markdown-body text-sm leading-relaxed">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{feedback}</ReactMarkdown>
+                  </div>
                 </div>
               </motion.div>
 
@@ -279,17 +290,30 @@ For each question:
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.2 }}
-                className="bg-surface brutal-border brutal-shadow p-5"
+                className="bg-surface rounded-xl shadow-card overflow-hidden"
               >
-                <div className="flex items-center gap-2 mb-3">
-                  {type === 'simulator' ? (
-                    <><MessageSquare className="w-5 h-5 text-accent" /> <span className="font-display font-bold uppercase text-sm">Clinical Notes</span></>
-                  ) : (
-                    <><FileText className="w-5 h-5 text-accent" /> <span className="font-display font-bold uppercase text-sm">Your Answers</span></>
-                  )}
-                </div>
-                <div className="bg-muted/30 p-4 font-mono text-sm whitespace-pre-wrap">
-                  {type === 'simulator' ? clinicalNotes || 'No clinical notes provided' : studentAnswers || 'No answers provided'}
+                <div className="h-1 bg-subtle" />
+                <div className="p-5">
+                  <div className="flex items-center gap-2 mb-4">
+                    {type === 'simulator' ? (
+                      <>
+                        <div className="w-8 h-8 bg-accent/10 rounded-full flex items-center justify-center">
+                          <MessageSquare className="w-4 h-4 text-accent" />
+                        </div>
+                        <span className="font-display font-semibold uppercase text-sm">Clinical Notes</span>
+                      </>
+                    ) : (
+                      <>
+                        <div className="w-8 h-8 bg-accent/10 rounded-full flex items-center justify-center">
+                          <FileText className="w-4 h-4 text-accent" />
+                        </div>
+                        <span className="font-display font-semibold uppercase text-sm">Your Answers</span>
+                      </>
+                    )}
+                  </div>
+                  <div className="bg-subtle/50 p-4 font-mono text-sm whitespace-pre-wrap rounded-lg leading-relaxed">
+                    {type === 'simulator' ? clinicalNotes || 'No clinical notes provided' : studentAnswers || 'No answers provided'}
+                  </div>
                 </div>
               </motion.div>
             </>
@@ -298,14 +322,11 @@ For each question:
       </div>
 
       {/* Fixed Footer */}
-      <footer className="p-4 border-t-2 border-ink bg-bg shrink-0">
+      <footer className="p-4 border-t border-subtle bg-surface shrink-0">
         <div className="flex justify-end max-w-4xl mx-auto">
-          <button
-            onClick={onClose}
-            className="bg-accent text-surface px-6 py-3 font-display font-bold uppercase text-sm brutal-border brutal-shadow hover:bg-ink transition-colors"
-          >
+          <PrimaryButton onClick={onClose}>
             Back to Dashboard
-          </button>
+          </PrimaryButton>
         </div>
       </footer>
     </div>

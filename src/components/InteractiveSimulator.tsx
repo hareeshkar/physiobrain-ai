@@ -5,7 +5,10 @@ import { generateJson, getAIClient } from '../lib/ai';
 import ReactMarkdown from 'react-markdown';
 import { CaseConfig } from '../types';
 import { cn } from '../lib/utils';
-import { saveActiveSession, getActiveSession, saveSessionToHistory, deleteActiveSession, ActiveSession } from '../lib/db';
+import { saveActiveSession, getActiveSessionById, saveSessionToHistory, deleteActiveSession, ActiveSession } from '../lib/db';
+import { ElegantSpinner } from './ui/ElegantSpinner';
+import { Card } from './ui/Card';
+import { PrimaryButton, GhostButton } from './ui/Button';
 
 interface Message {
   id: string;
@@ -21,6 +24,8 @@ export interface CaseDetails {
 
 interface InteractiveSimulatorProps {
   config: CaseConfig;
+  launchMode?: 'fresh' | 'resume';
+  resumeSessionId?: string | null;
   onExit: () => void;
   onComplete?: (feedbackData: {
     type: 'simulator';
@@ -33,7 +38,13 @@ interface InteractiveSimulatorProps {
   }) => void;
 }
 
-export function InteractiveSimulator({ config, onExit, onComplete }: InteractiveSimulatorProps) {
+export function InteractiveSimulator({
+  config,
+  launchMode = 'fresh',
+  resumeSessionId = null,
+  onExit,
+  onComplete,
+}: InteractiveSimulatorProps) {
   const [caseState, setCaseState] = useState<'generating' | 'active' | 'error' | 'resuming'>('resuming');
   const [caseDetails, setCaseDetails] = useState<CaseDetails | null>(null);
 
@@ -53,7 +64,6 @@ export function InteractiveSimulator({ config, onExit, onComplete }: Interactive
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatSessionRef = useRef<any>(null);
   const sessionIdRef = useRef<string>('');
-  const initializedRef = useRef(false);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -63,76 +73,45 @@ export function InteractiveSimulator({ config, onExit, onComplete }: Interactive
     scrollToBottom();
   }, [messages]);
 
-  // Check for existing session on mount
   useEffect(() => {
-    if (initializedRef.current) return;
-    initializedRef.current = true;
+    const startSimulation = async () => {
+      setCaseState('resuming');
+      setMessages([]);
+      setClinicalNotes('');
+      setCaseDetails(null);
+      setInput('');
+      setIsSimulationEnded(false);
+      setShowErrorDialog(false);
+      setErrorMessage(null);
+      setFailedMessage(null);
+      chatSessionRef.current = null;
+      sessionIdRef.current = '';
 
-    const checkExistingSession = async () => {
-      try {
-        const existing = await getActiveSession('simulator');
-        console.log('[Resume Check] Found session:', existing ? `id=${existing.id}, module=${existing.config.module}` : 'none');
-        console.log('[Resume Check] Current config module:', config.module);
-        console.log('[Resume Check] Match:', existing && existing.config.module === config.module);
-
-        if (existing && existing.config.module === config.module) {
-          // Resume existing session
-          console.log('[Resume Check] Resuming session', existing.id);
-          sessionIdRef.current = existing.id;
-          setCaseDetails(existing.caseDetails || null);
-          setMessages(existing.messages || []);
-          setClinicalNotes(existing.clinicalNotes || '');
-          setCaseState('active');
-
-          // If session was ended, go to feedback view instead
-          if (existing.ended) {
-            console.log('[Resume Check] Session ended, going to feedback');
-            if (onComplete) {
-              onComplete({
-                type: 'simulator',
-                config: existing.config,
-                caseDetails: existing.caseDetails || null,
-                messages: existing.messages || [],
-                clinicalNotes: existing.clinicalNotes || '',
-                feedback: undefined, // FeedbackView will generate
-                diagnosis: existing.caseDetails?.diagnosis,
-              });
+      if (launchMode === 'resume' && resumeSessionId) {
+        try {
+          const active = await getActiveSessionById(resumeSessionId);
+          if (active && active.type === 'simulator') {
+            sessionIdRef.current = active.id;
+            setCaseDetails(active.caseDetails as CaseDetails || null);
+            setMessages(active.messages || []);
+            setClinicalNotes(active.clinicalNotes || '');
+            setIsSimulationEnded(Boolean(active.ended));
+            setCaseState('active');
+            if (active.caseDetails?.hiddenPersona) {
+              await initSimulation(active.caseDetails.hiddenPersona, true);
             }
             return;
           }
-
-          // Re-initialize the chat with the existing messages
-          if (existing.caseDetails) {
-            initSimulation(existing.caseDetails.hiddenPersona, true);
-          }
-
-          // Explicitly save after resuming to update lastUpdatedAt
-          saveActiveSession({
-            id: existing.id,
-            type: 'simulator',
-            config,
-            caseDetails: existing.caseDetails,
-            messages: existing.messages || [],
-            clinicalNotes: existing.clinicalNotes || '',
-            studentAnswers: '',
-            startedAt: existing.startedAt,
-            lastUpdatedAt: Date.now(),
-            ended: false,
-          });
-          return;
+        } catch (e) {
+          console.error('Failed to resume simulator session:', e);
         }
-      } catch (e) {
-        console.error('Failed to check existing session:', e);
-        generateCase();
-        return;
       }
-      // No existing session or different module - generate new case
-      console.log('[Resume Check] No matching session found, generating new case');
+
       generateCase();
     };
 
-    checkExistingSession();
-  }, [config]);
+    startSimulation();
+  }, [config, launchMode, resumeSessionId]);
 
   // Auto-save session to IndexedDB
   const saveSession = useCallback(async () => {
@@ -379,7 +358,7 @@ Return ONLY a JSON object matching EXACTLY this structure:
       // Move session from active to history as "ended" (FeedbackView will generate feedback)
       if (sessionIdRef.current) {
         try {
-          const activeSession = await getActiveSession('simulator');
+          const activeSession = await getActiveSessionById(sessionIdRef.current);
           if (activeSession && activeSession.id === sessionIdRef.current) {
             const duration = Math.floor((Date.now() - activeSession.startedAt) / 1000);
             await saveSessionToHistory({
@@ -424,73 +403,47 @@ Return ONLY a JSON object matching EXACTLY this structure:
     }
   };
 
-  // Error Dialog Component
-  const ErrorDialog = () => (
-    <AnimatePresence>
-      {showErrorDialog && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/80 backdrop-blur-sm p-4"
-        >
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            className="w-full max-w-md bg-surface brutal-border brutal-shadow p-8"
-          >
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-12 h-12 bg-accent flex items-center justify-center brutal-border">
-                <AlertCircle className="text-surface w-6 h-6" />
-              </div>
-              <h2 className="text-2xl font-display font-bold uppercase tracking-tight">Connection Issue</h2>
-            </div>
-
-            <p className="text-muted-text mb-2 font-sans">
-              {errorMessage || "The case generation is taking longer than expected."}
-            </p>
-            <p className="text-muted-text mb-8 font-sans text-sm">
-              This process may take up to 5 minutes depending on complexity.
-            </p>
-
-            <div className="flex flex-col gap-3">
-              <button
-                onClick={handleRetry}
-                className="w-full bg-accent text-surface p-4 font-display font-bold uppercase tracking-wider flex items-center justify-center gap-2 brutal-border brutal-shadow-sm hover:bg-ink transition-colors group"
-              >
-                <RefreshCw className="w-5 h-5 group-hover:rotate-180 transition-transform" />
-                Try Again
-              </button>
-              <button
-                onClick={handleReturnToDashboard}
-                className="w-full bg-bg text-ink p-4 font-display font-bold uppercase tracking-wider flex items-center justify-center gap-2 brutal-border brutal-shadow-sm hover:bg-ink hover:text-surface transition-colors"
-              >
-                Return to Dashboard
-              </button>
-            </div>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+  // Inline Error Card Component
+  const ErrorCard = () => (
+    <Card className="max-w-md mx-auto p-6 text-center">
+      <div className="w-12 h-12 bg-error/10 rounded-full flex items-center justify-center mx-auto mb-4">
+        <AlertCircle className="text-error w-6 h-6" />
+      </div>
+      <h3 className="font-display text-xl font-semibold mb-2">Connection Issue</h3>
+      <p className="text-muted text-sm mb-6">
+        {errorMessage || "The case generation is taking longer than expected."}
+      </p>
+      <div className="flex flex-col gap-3">
+        <PrimaryButton onClick={handleRetry} className="w-full">
+          <RefreshCw className="w-4 h-4 mr-2" />
+          Try Again
+        </PrimaryButton>
+        <GhostButton onClick={handleReturnToDashboard} className="w-full">
+          Return to Dashboard
+        </GhostButton>
+      </div>
+    </Card>
   );
 
   if (caseState === 'generating') {
     return (
       <div className="h-full flex flex-col items-center justify-center p-6">
-        <div className="relative mb-6">
-          <RefreshCw className="w-16 h-16 text-accent animate-spin" />
-          <div className="absolute inset-0 bg-accent/20 rounded-full animate-ping" />
-        </div>
-        <h2 className="font-display font-bold text-2xl md:text-3xl uppercase mb-2 tracking-tight">Generating Case...</h2>
-        <p className="font-mono text-xs md:text-sm text-muted-text uppercase text-center max-w-md mb-4">
-          Building patient profile, clinical history, and hidden diagnosis based on your parameters.
-        </p>
-        <div className="flex items-center gap-2 text-muted-text">
-          <AlertTriangle className="w-4 h-4" />
-          <span className="font-mono text-xs uppercase">This may take up to 5 minutes</span>
-        </div>
-        <ErrorDialog />
+        <Card className="max-w-md mx-auto p-8 text-center">
+          <div className="mb-6">
+            <ElegantSpinner size="lg" className="mx-auto" />
+          </div>
+          <h2 className="font-display text-2xl md:text-3xl font-semibold mb-2">
+            Generating Case...
+          </h2>
+          <p className="text-muted text-sm mb-4">
+            Building patient profile, clinical history, and hidden diagnosis based on your parameters.
+          </p>
+          <div className="flex items-center justify-center gap-2 text-muted text-xs">
+            <AlertTriangle className="w-4 h-4" />
+            <span>This may take up to 5 minutes</span>
+          </div>
+        </Card>
+        {showErrorDialog && <ErrorCard />}
       </div>
     );
   }
@@ -498,36 +451,36 @@ Return ONLY a JSON object matching EXACTLY this structure:
   if (caseState === 'error' && !showErrorDialog) {
     return (
       <div className="h-full flex flex-col items-center justify-center p-6">
-        <ErrorDialog />
+        <ErrorCard />
       </div>
     );
   }
 
   return (
-    <div className="h-full flex flex-col lg:flex-row gap-4 lg:gap-6">
-      <ErrorDialog />
-
+    <div className="h-full flex flex-col lg:flex-row gap-4 lg:gap-6 pb-24 md:pb-10 overflow-y-auto overflow-x-hidden">
       {/* Left Pane: Patient Chat */}
-      <div className="flex-1 flex flex-col bg-surface brutal-border brutal-shadow h-full overflow-hidden min-h-[400px] lg:min-h-0">
-        <div className="p-3 md:p-4 border-b-2 border-ink flex justify-between items-center bg-bg gap-2">
+      <div className="flex-1 flex flex-col bg-surface rounded-xl shadow-card h-full overflow-hidden min-h-[400px] lg:min-h-0">
+        {/* Chat Header */}
+        <div className="p-3 md:p-4 border-b border-subtle flex justify-between items-center gap-2">
           <div className="flex items-center gap-2 md:gap-3 min-w-0">
-            <div className="w-8 h-8 md:w-10 md:h-10 bg-accent rounded-full flex items-center justify-center brutal-border shrink-0">
-              <User className="text-surface w-4 h-4 md:w-5 md:h-5" />
+            <div className="w-8 h-8 md:w-10 md:h-10 bg-accent/10 rounded-full flex items-center justify-center shrink-0">
+              <User className="text-accent w-4 h-4 md:w-5 md:h-5" />
             </div>
             <div className="min-w-0">
-              <h2 className="font-display font-bold uppercase text-sm md:text-lg leading-none truncate">Patient Simulation</h2>
-              <span className="font-mono text-[10px] md:text-xs text-muted-text uppercase hidden sm:block">{config.module} - {config.setting}</span>
+              <h2 className="font-sans font-medium text-sm md:text-base leading-none truncate">{config.module} - Patient Simulation</h2>
+              <span className="font-mono text-[10px] md:text-xs text-muted uppercase hidden sm:block">{config.setting}</span>
             </div>
           </div>
           <button
             onClick={requestFeedback}
             disabled={isLoading || messages.length < 1}
-            className="text-[10px] md:text-xs font-mono uppercase hover:text-accent transition-colors shrink-0 disabled:opacity-50"
+            className="text-xs font-sans text-accent hover:text-accent/80 transition-colors shrink-0 disabled:opacity-50"
           >
-            {isLoading ? '[ Generating... ]' : '[ End & Evaluate ]'}
+            {isLoading ? 'Generating...' : 'End & Evaluate'}
           </button>
         </div>
 
+        {/* Chat Messages */}
         <div className="flex-1 overflow-y-auto p-3 md:p-6 flex flex-col gap-4 md:gap-6">
           {messages.map((msg) => (
             <motion.div
@@ -535,18 +488,18 @@ Return ONLY a JSON object matching EXACTLY this structure:
               animate={{ opacity: 1, y: 0 }}
               key={msg.id}
               className={cn(
-                "max-w-[90%] md:max-w-[85%] p-3 md:p-4 brutal-border text-sm md:text-base",
-                msg.role === 'user' ? "self-end bg-ink text-surface" :
-                msg.role === 'system' ? "self-center bg-accent text-surface text-center text-xs md:text-sm font-mono" :
-                "self-start bg-bg"
+                "max-w-[85%] p-3 md:p-4 text-sm md:text-base",
+                msg.role === 'user' && "self-end bg-accent text-white rounded-tl-4xl rounded-tr-4xl rounded-bl-4xl rounded-br-sm",
+                msg.role === 'system' && "self-center bg-accent/10 text-accent text-center text-xs md:text-sm rounded-2xl px-4 py-2",
+                msg.role === 'patient' && "self-start bg-surface text-ink rounded-tl-4xl rounded-tr-4xl rounded-bl-sm rounded-br-4xl shadow-card"
               )}
             >
-              <div className="text-[10px] font-mono uppercase opacity-50 mb-1 md:mb-2 tracking-wider flex justify-between items-center">
+              <div className="text-[10px] font-mono uppercase opacity-60 mb-1 md:mb-2 tracking-wider flex justify-between items-center">
                 <span>{msg.role}</span>
                 {msg.id === 'failed' && (
                   <button
                     onClick={retryFailedMessage}
-                    className="text-[10px] bg-red-500 text-white px-2 py-0.5 rounded uppercase hover:bg-red-600"
+                    className="text-[10px] bg-error text-white px-2 py-0.5 rounded-full uppercase hover:bg-error/80"
                   >
                     Retry
                   </button>
@@ -556,37 +509,38 @@ Return ONLY a JSON object matching EXACTLY this structure:
                 {msg.content}
               </div>
               {msg.id === 'failed' && (
-                <div className="mt-2 text-[10px] text-red-400 font-mono">
+                <div className="mt-2 text-[10px] text-error font-mono">
                   Failed to send. Click retry to try again.
                 </div>
               )}
             </motion.div>
           ))}
           {isLoading && messages[messages.length - 1]?.role === 'user' && (
-            <div className="self-start bg-bg p-3 md:p-4 brutal-border max-w-[90%] md:max-w-[85%]">
+            <div className="self-start bg-surface p-3 md:p-4 rounded-tl-4xl rounded-tr-4xl rounded-bl-sm rounded-br-4xl shadow-card max-w-[85%]">
               <div className="flex gap-1">
-                <div className="w-2 h-2 bg-ink rounded-full animate-bounce" />
-                <div className="w-2 h-2 bg-ink rounded-full animate-bounce" style={{ animationDelay: '0.2s' }} />
-                <div className="w-2 h-2 bg-ink rounded-full animate-bounce" style={{ animationDelay: '0.4s' }} />
+                <div className="w-2 h-2 bg-accent rounded-full animate-bounce" />
+                <div className="w-2 h-2 bg-accent rounded-full animate-bounce" style={{ animationDelay: '0.2s' }} />
+                <div className="w-2 h-2 bg-accent rounded-full animate-bounce" style={{ animationDelay: '0.4s' }} />
               </div>
             </div>
           )}
           <div ref={messagesEndRef} />
         </div>
 
-        <form onSubmit={handleSendMessage} className="p-3 md:p-4 border-t-2 border-ink bg-bg flex gap-2">
+        {/* Input Area */}
+        <form onSubmit={handleSendMessage} className="p-3 md:p-4 border-t border-subtle bg-surface flex gap-2">
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder={failedMessage ? "Retry your message..." : "Ask the patient a question..."}
-            className="flex-1 p-3 bg-surface brutal-border font-sans text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+            className="flex-1 p-3 bg-background rounded-full border border-subtle font-sans text-sm focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent"
             disabled={isLoading || isSimulationEnded}
           />
           <button
             type="submit"
             disabled={isLoading || (!input.trim() && !failedMessage) || isSimulationEnded}
-            className="bg-accent text-surface p-3 brutal-border brutal-shadow-sm hover:bg-ink transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-12 h-12 bg-accent text-white rounded-full flex items-center justify-center shadow-button hover:bg-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
           >
             <Send className="w-5 h-5" />
           </button>
@@ -594,33 +548,31 @@ Return ONLY a JSON object matching EXACTLY this structure:
       </div>
 
       {/* Right Pane: Clinical Notes */}
-      <div className="w-full lg:w-[400px] xl:w-[450px] flex flex-col gap-4 lg:gap-6 h-full">
+      <div className="w-full lg:w-[400px] xl:w-[450px] flex flex-col gap-4 lg:gap-6 h-full pb-12 lg:pb-0">
         {/* Case Brief - Main reference (bigger) */}
-        <div className="flex-1 flex flex-col bg-surface brutal-border brutal-shadow overflow-hidden min-h-[250px]">
-          <div className="p-2 md:p-3 border-b-2 border-ink bg-bg text-ink flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <FileText className="w-4 h-4" />
-              <h3 className="font-display font-bold uppercase text-xs md:text-sm tracking-widest">Case Brief</h3>
-            </div>
+        <Card className="flex-1 overflow-hidden min-h-[250px] flex flex-col">
+          <div className="p-3 md:p-4 border-b border-subtle flex items-center gap-2">
+            <FileText className="w-4 h-4 text-accent" />
+            <h3 className="font-display font-semibold text-sm md:text-base">Case Brief</h3>
           </div>
-          <div className="flex-1 p-3 md:p-4 bg-surface font-sans text-sm leading-relaxed text-muted-text overflow-y-auto">
+          <div className="flex-1 p-4 bg-surface font-sans text-sm leading-relaxed text-muted overflow-y-auto">
             {caseDetails?.studentBrief}
           </div>
-        </div>
+        </Card>
 
         {/* Clinical Notes - Smaller workspace */}
-        <div className="flex-shrink-0 flex flex-col bg-surface brutal-border brutal-shadow overflow-hidden max-h-[200px]">
-          <div className="p-2 md:p-3 border-b-2 border-ink bg-ink text-surface flex items-center gap-2">
-            <Activity className="w-4 h-4" />
-            <h3 className="font-display font-bold uppercase text-xs md:text-sm tracking-widest">Clinical Notes</h3>
+        <Card className="flex-shrink-0 overflow-hidden max-h-[200px] flex flex-col">
+          <div className="p-3 md:p-4 border-b border-subtle bg-surface flex items-center gap-2">
+            <Activity className="w-4 h-4 text-accent" />
+            <h3 className="font-display font-semibold text-sm">Clinical Notes</h3>
           </div>
           <textarea
             value={clinicalNotes}
             onChange={(e) => setClinicalNotes(e.target.value)}
             placeholder="Document your findings, hypotheses, and plan..."
-            className="p-3 md:p-4 bg-transparent resize-none font-mono text-sm focus:outline-none h-[100px]"
+            className="p-4 bg-transparent resize-none font-mono text-sm focus:outline-none focus:ring-2 focus:ring-accent/20 h-[100px]"
           />
-        </div>
+        </Card>
       </div>
     </div>
   );

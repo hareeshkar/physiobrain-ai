@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { motion } from 'motion/react';
-import { Search, BookOpen, Layers, Zap, ExternalLink, Tag } from 'lucide-react';
+import { Search, BookOpen, ExternalLink, Tag } from 'lucide-react';
 import { generateJson } from '../lib/ai';
 import ReactMarkdown from 'react-markdown';
-import { cn } from '../lib/utils';
+import { ElegantSpinner } from './ui/ElegantSpinner';
+import { SkeletonLoader } from './ui/SkeletonLoader';
+import { PrimaryButton } from './ui/Button';
+import { PillToggle } from './ui';
 
 interface KnowledgeResponse {
   markdownContent: string;
@@ -16,15 +18,19 @@ export function KnowledgeEngine() {
   const [result, setResult] = useState('');
   const [related, setRelated] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const executeSearch = async (searchQuery: string) => {
     if (!searchQuery.trim() || isLoading) return;
 
     setIsLoading(true);
     setQuery(searchQuery);
+    setError(null);
+    setResult('');
+
     try {
       const prompt = `Provide structured physiotherapy knowledge about: "${searchQuery}".
-      
+
 Target Audience Mode: ${mode.toUpperCase()}
 - BEGINNER: Use simple language, explain medical terms, focus on basic understanding.
 - EXAM: Use formal academic terminology, focus on key facts, criteria, and standard definitions.
@@ -49,7 +55,7 @@ Return a JSON object EXACTLY matching this structure:
       setRelated(response.relatedTopics || []);
     } catch (error) {
       console.error("Error fetching knowledge:", error);
-      setResult("Error retrieving information. Please check your connection and API key.");
+      setError(error instanceof Error ? error.message : "Error retrieving information");
       setRelated([]);
     } finally {
       setIsLoading(false);
@@ -61,88 +67,122 @@ Return a JSON object EXACTLY matching this structure:
     executeSearch(query);
   };
 
+  const modeOptions = [
+    { value: 'beginner' as const, label: 'Beginner' },
+    { value: 'exam' as const, label: 'Exam' },
+    { value: 'clinical' as const, label: 'Clinical' },
+  ];
+
   return (
     <div className="h-full flex flex-col gap-6">
-      <div className="bg-surface brutal-border brutal-shadow p-6">
+      {/* Header Card */}
+      <div className="bg-surface rounded-xl shadow-card p-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-          <h2 className="font-display font-bold text-2xl uppercase flex items-center gap-3">
+          <h2 className="font-display font-semibold text-2xl flex items-center gap-3">
             <BookOpen className="w-6 h-6 text-accent" />
             Evidence Engine
           </h2>
-          
+
           {query && (
-            <a 
+            <a
               href={`https://www.physio-pedia.com/index.php?search=${encodeURIComponent(query)}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="bg-bg text-ink px-4 py-2 brutal-border brutal-shadow-sm hover:bg-accent hover:text-surface transition-colors flex items-center gap-2 font-mono text-xs uppercase w-fit"
+              className="text-muted text-sm hover:text-accent transition-colors flex items-center gap-2 font-mono"
             >
               <ExternalLink className="w-4 h-4" />
               Search Physiopedia
             </a>
           )}
         </div>
-        
+
         <form onSubmit={handleSearch} className="flex flex-col gap-4">
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search topics (e.g., ACL rehab, stroke gait, rotator cuff)..."
-              className="flex-1 p-4 bg-bg brutal-border font-sans text-lg focus:outline-none focus:ring-2 focus:ring-accent"
-            />
-            <button 
+          <div className="flex gap-3">
+            <div className="relative flex-1">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted" />
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search topics (e.g., ACL rehab, stroke gait, rotator cuff)..."
+                className="w-full h-[52px] pl-12 pr-4 bg-background border border-subtle rounded-xl font-sans text-base focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent"
+              />
+            </div>
+            <button
               type="submit"
               disabled={isLoading || !query.trim()}
-              className="bg-ink text-surface px-8 brutal-border brutal-shadow-sm hover:bg-accent transition-colors disabled:opacity-50 flex items-center justify-center"
+              className="w-14 h-[52px] bg-accent text-surface rounded-xl flex items-center justify-center hover:bg-ink transition-colors disabled:opacity-50 flex-shrink-0"
             >
-              {isLoading ? <Zap className="w-6 h-6 animate-pulse" /> : <Search className="w-6 h-6" />}
+              <Search className="w-5 h-5" />
             </button>
           </div>
 
-          <div className="flex gap-4 mt-2">
-            <span className="font-mono text-xs uppercase text-muted-text flex items-center">Complexity:</span>
-            {(['beginner', 'exam', 'clinical'] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setMode(m)}
-                className={cn(
-                  "px-3 py-1 text-xs font-mono uppercase brutal-border transition-colors",
-                  mode === m ? "bg-accent text-surface" : "bg-surface text-ink hover:bg-bg"
-                )}
-              >
-                {m}
-              </button>
-            ))}
+          <div className="flex items-center justify-center gap-4 mt-2">
+            <span className="font-mono text-xs uppercase text-muted">Complexity:</span>
+            <PillToggle
+              options={modeOptions}
+              value={mode}
+              onChange={(value) => setMode(value)}
+            />
           </div>
         </form>
       </div>
 
-      <div className="flex-1 bg-surface brutal-border brutal-shadow overflow-hidden flex flex-col">
-        <div className="p-4 border-b-2 border-ink bg-bg flex items-center gap-2">
-          <Layers className="w-4 h-4" />
-          <h3 className="font-mono text-xs uppercase tracking-widest">Structured Output</h3>
+      {/* Results Area */}
+      <div className="flex-1 bg-surface rounded-xl shadow-card overflow-hidden flex flex-col">
+        <div className="p-4 border-b border-subtle flex items-center gap-2">
+          <Tag className="w-4 h-4 text-accent" />
+          <h3 className="font-display text-sm uppercase tracking-wider">Structured Output</h3>
         </div>
         <div className="flex-1 overflow-y-auto p-8">
-          {result ? (
+          {isLoading ? (
+            <div className="max-w-4xl mx-auto">
+              <div className="bg-surface rounded-xl shadow-card p-8">
+                <SkeletonLoader variant="block" className="h-4 w-3/4 mb-4" />
+                <SkeletonLoader variant="block" className="h-4 w-1/2 mb-4" />
+                <SkeletonLoader variant="block" className="h-4 w-5/6 mb-4" />
+                <SkeletonLoader variant="block" className="h-4 w-2/3 mb-6" />
+                <SkeletonLoader variant="text" className="h-4 w-full mb-2" />
+                <SkeletonLoader variant="text" className="h-4 w-4/5 mb-2" />
+                <SkeletonLoader variant="text" className="h-4 w-3/4" />
+
+                <div className="flex flex-col items-center mt-8">
+                  <ElegantSpinner size="md" />
+                  <p className="mt-4 text-muted font-sans text-sm">
+                    Generating evidence-based notes...
+                  </p>
+                  <p className="text-muted/60 text-xs mt-1">
+                    This usually takes 10-30 seconds
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : error ? (
+            <div className="max-w-4xl mx-auto">
+              <div className="bg-surface rounded-xl shadow-card p-6 text-center">
+                <p className="text-error mb-4">{error}</p>
+                <PrimaryButton onClick={() => executeSearch(query)}>
+                  Try Again
+                </PrimaryButton>
+              </div>
+            </div>
+          ) : result ? (
             <div className="max-w-4xl mx-auto">
               <div className="markdown-body">
                 <ReactMarkdown>{result}</ReactMarkdown>
               </div>
-              
+
               {related.length > 0 && (
-                <div className="mt-12 pt-8 border-t-2 border-ink border-dashed">
-                  <h4 className="font-mono text-xs uppercase font-bold mb-4 flex items-center gap-2 text-muted-text">
+                <div className="mt-12 pt-8 border-t border-subtle">
+                  <h4 className="font-display text-sm uppercase font-semibold mb-4 flex items-center gap-2 text-muted">
                     <Tag className="w-4 h-4" /> Related Topics
                   </h4>
-                  <div className="flex flex-wrap gap-3">
+                  <div className="flex flex-wrap gap-3 overflow-x-auto pb-2">
                     {related.map((topic, i) => (
                       <button
                         key={i}
                         onClick={() => executeSearch(topic)}
-                        className="px-4 py-2 bg-bg brutal-border text-sm font-sans hover:bg-ink hover:text-surface transition-colors brutal-shadow-sm"
+                        className="px-4 py-2 bg-subtle text-sm font-sans hover:bg-accent hover:text-surface transition-colors rounded-full whitespace-nowrap"
                       >
                         {topic}
                       </button>
@@ -152,8 +192,8 @@ Return a JSON object EXACTLY matching this structure:
               )}
             </div>
           ) : (
-            <div className="h-full flex items-center justify-center text-muted-text">
-              <p className="font-mono text-sm uppercase text-center max-w-md">
+            <div className="h-full flex items-center justify-center text-muted">
+              <p className="font-sans text-sm text-center max-w-md">
                 Search for a topic to generate evidence-based notes tailored to your selected complexity level.
               </p>
             </div>

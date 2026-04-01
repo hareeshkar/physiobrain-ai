@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Shuffle, Play, Settings2 } from 'lucide-react';
+import { Settings2, Shuffle, Play } from 'lucide-react';
 import { CaseConfig } from '../types';
 import { cn } from '../lib/utils';
+import { PrimaryButton, SecondaryButton, PillToggle } from './ui';
 
 const MODULES = [
   "Musculoskeletal (Spine)",
@@ -136,8 +137,8 @@ function SelectOrCustomField({ label, options, value, onChange }: SelectOrCustom
 
   return (
     <div className="flex flex-col gap-2">
-      <label className="font-mono text-xs uppercase font-bold tracking-widest text-muted-text">{label}</label>
-      <select 
+      <label className="font-mono text-xs uppercase font-medium tracking-wider text-muted">{label}</label>
+      <select
         value={selectMode}
         onChange={(e) => {
           const val = e.target.value;
@@ -145,24 +146,24 @@ function SelectOrCustomField({ label, options, value, onChange }: SelectOrCustom
           if (val !== 'Other (Type manually)') {
             onChange(val);
           } else {
-            onChange(''); // Clear value so user can type
+            onChange('');
           }
         }}
-        className="appearance-none w-full p-4 bg-bg brutal-border font-sans text-lg focus:outline-none focus:ring-2 focus:ring-accent cursor-pointer"
+        className="w-full h-[52px] px-4 bg-surface border border-subtle rounded-lg font-sans text-base text-ink focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent cursor-pointer appearance-none"
       >
         {options.map(o => <option key={o} value={o}>{o}</option>)}
         <option value="Other (Type manually)">Other (Type manually)...</option>
       </select>
-      
+
       {selectMode === 'Other (Type manually)' && (
         <motion.input
-          initial={{ opacity: 0, height: 0, marginTop: 0 }}
-          animate={{ opacity: 1, height: 'auto', marginTop: 8 }}
+          initial={{ opacity: 0, height: 0 }}
+          animate={{ opacity: 1, height: 'auto' }}
           type="text"
           value={!options.includes(value) ? value : ''}
           onChange={(e) => onChange(e.target.value)}
           placeholder={`Specify custom ${label.toLowerCase()}...`}
-          className="w-full p-4 bg-surface brutal-border font-sans text-lg focus:outline-none focus:ring-2 focus:ring-accent"
+          className="w-full h-[52px] px-4 bg-surface border border-subtle rounded-lg font-sans text-base text-ink focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent"
           autoFocus
         />
       )}
@@ -178,8 +179,8 @@ export function CaseGenerator({ onGenerate }: CaseGeneratorProps) {
   const [config, setConfig] = useState<CaseConfig>({
     module: MODULES[0],
     setting: SETTINGS[0],
-    ageGroup: AGE_GROUPS[4], // Middle-Aged default
-    severity: SEVERITIES[1], // Sub-acute default
+    ageGroup: AGE_GROUPS[4],
+    severity: SEVERITIES[1],
     complexity: COMPLEXITIES[0],
     terminology: 'Intermediate',
     specificTopic: '',
@@ -195,7 +196,7 @@ export function CaseGenerator({ onGenerate }: CaseGeneratorProps) {
       ageGroup: AGE_GROUPS[Math.floor(Math.random() * AGE_GROUPS.length)],
       severity: SEVERITIES[Math.floor(Math.random() * SEVERITIES.length)],
       complexity: COMPLEXITIES[Math.floor(Math.random() * COMPLEXITIES.length)],
-      terminology: ['Basic', 'Intermediate', 'Advanced'][Math.floor(Math.random() * 3)] as any,
+      terminology: ['Basic', 'Intermediate', 'Advanced'][Math.floor(Math.random() * 3)] as 'Basic' | 'Intermediate' | 'Advanced',
       specificTopic: '',
       caseStyle: Math.random() > 0.5 ? 'interactive' : 'open',
       questionFocus: QUESTION_FOCUSES[Math.floor(Math.random() * QUESTION_FOCUSES.length)],
@@ -208,190 +209,185 @@ export function CaseGenerator({ onGenerate }: CaseGeneratorProps) {
     onGenerate(config);
   };
 
+  const caseStyleOptions = [
+    { value: 'interactive' as const, label: 'Interactive Simulation' },
+    { value: 'open' as const, label: 'Book-Style Exam' },
+  ];
+
+  const terminologyOptions = [
+    { value: 'Basic' as const, label: 'Basic', description: 'Simple language, guided prompts' },
+    { value: 'Intermediate' as const, label: 'Intermediate', description: 'Clinical terminology' },
+    { value: 'Advanced' as const, label: 'Advanced', description: 'Complex, minimal guidance' },
+  ];
+
   return (
-    <div className="max-w-3xl mx-auto h-full py-6">
-      <motion.div 
+    <div className="max-w-2xl mx-auto h-full py-6 px-4 pb-28 md:pb-8 overflow-x-hidden">
+      <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-surface brutal-border brutal-shadow p-6 md:p-10"
+        className="bg-surface rounded-2xl p-6 md:p-8 shadow-elevated"
       >
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8 pb-6 border-b-4 border-ink">
+        {/* Header */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-accent flex items-center justify-center brutal-border">
-              <Settings2 className="w-6 h-6 text-surface" />
+            <div className="w-12 h-12 bg-accent/10 rounded-full flex items-center justify-center">
+              <Settings2 className="w-6 h-6 text-accent" />
             </div>
-            <h2 className="font-display font-bold text-3xl uppercase tracking-tight">Case Setup</h2>
+            <h2 className="font-display font-semibold text-2xl md:text-3xl text-ink">Case Setup</h2>
           </div>
-          
-          <button 
-            type="button"
+
+          <SecondaryButton
             onClick={handleRandomize}
-            className="flex items-center gap-2 font-mono text-sm uppercase bg-bg px-4 py-2 brutal-border brutal-shadow-sm hover:bg-ink hover:text-surface transition-colors"
+            size="sm"
+            className="gap-2"
           >
             <Shuffle className="w-4 h-4" />
             Randomize
-          </button>
+          </SecondaryButton>
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-8">
-          
-          <div className="flex flex-col gap-4">
-            <label className="font-mono text-xs uppercase font-bold tracking-widest text-muted-text">Case Style</label>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <button
-                type="button"
-                onClick={() => setConfig({...config, caseStyle: 'interactive'})}
-                className={cn(
-                  "p-4 brutal-border text-left transition-all flex flex-col gap-2",
-                  config.caseStyle === 'interactive' 
-                    ? "bg-ink text-surface brutal-shadow-sm translate-x-[2px] translate-y-[2px]" 
-                    : "bg-surface hover:bg-bg brutal-shadow"
-                )}
-              >
-                <span className="font-display font-bold uppercase text-lg">Interactive Simulation</span>
-                <span className={cn(
-                  "font-sans text-sm",
-                  config.caseStyle === 'interactive' ? "text-muted" : "text-muted-text"
-                )}>Blind assessment. Interview the patient to discover their history.</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setConfig({...config, caseStyle: 'open'})}
-                className={cn(
-                  "p-4 brutal-border text-left transition-all flex flex-col gap-2",
-                  config.caseStyle === 'open' 
-                    ? "bg-ink text-surface brutal-shadow-sm translate-x-[2px] translate-y-[2px]" 
-                    : "bg-surface hover:bg-bg brutal-shadow"
-                )}
-              >
-                <span className="font-display font-bold uppercase text-lg">Book-Style Exam</span>
-                <span className={cn(
-                  "font-sans text-sm",
-                  config.caseStyle === 'open' ? "text-muted" : "text-muted-text"
-                )}>Written clinical vignette followed by specific exam questions to answer.</span>
-              </button>
+
+          {/* Case Style Toggle */}
+          <div className="flex flex-col gap-3">
+            <label className="font-mono text-xs uppercase font-medium tracking-wider text-muted">Case Style</label>
+            <div className="flex justify-start">
+              <PillToggle
+                options={caseStyleOptions}
+                value={config.caseStyle}
+                onChange={(val) => setConfig({...config, caseStyle: val})}
+              />
             </div>
           </div>
 
           {/* Quick Templates */}
           {config.caseStyle === 'interactive' && (
-            <div className="flex flex-col gap-3 bg-bg p-4 brutal-border">
-              <label className="font-mono text-xs uppercase font-bold tracking-widest text-muted-text">Quick Templates</label>
-              <div className="flex flex-wrap gap-2">
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              className="flex flex-col gap-3"
+            >
+              <label className="font-mono text-xs uppercase font-medium tracking-wider text-muted">Quick Templates</label>
+              <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 md:mx-0 md:px-0 md:flex-wrap">
                 {Object.keys(PREDEFINED_TEMPLATES).map((templateName) => (
                   <button
                     key={templateName}
                     type="button"
                     onClick={() => setConfig(PREDEFINED_TEMPLATES[templateName])}
-                    className="text-xs font-mono uppercase bg-surface px-3 py-2 brutal-border hover:bg-accent hover:text-surface transition-colors"
+                    className="flex-shrink-0 px-4 py-2 bg-subtle rounded-full text-sm font-sans text-ink hover:bg-accent hover:text-white transition-all"
                   >
                     {templateName}
                   </button>
                 ))}
               </div>
-            </div>
+            </motion.div>
           )}
 
+          {/* Form Fields - 2 columns on desktop */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <SelectOrCustomField 
-              label="Module" 
-              options={MODULES} 
-              value={config.module} 
-              onChange={(v) => setConfig({...config, module: v})} 
+            <SelectOrCustomField
+              label="Module"
+              options={MODULES}
+              value={config.module}
+              onChange={(v) => setConfig({...config, module: v})}
             />
             {config.caseStyle === 'interactive' ? (
-              <SelectOrCustomField 
-                label="Setting" 
-                options={SETTINGS} 
-                value={config.setting} 
-                onChange={(v) => setConfig({...config, setting: v})} 
+              <SelectOrCustomField
+                label="Setting"
+                options={SETTINGS}
+                value={config.setting}
+                onChange={(v) => setConfig({...config, setting: v})}
               />
             ) : (
-              <SelectOrCustomField 
-                label="Question Focus" 
-                options={QUESTION_FOCUSES} 
-                value={config.questionFocus || QUESTION_FOCUSES[0]} 
-                onChange={(v) => setConfig({...config, questionFocus: v})} 
+              <SelectOrCustomField
+                label="Question Focus"
+                options={QUESTION_FOCUSES}
+                value={config.questionFocus || QUESTION_FOCUSES[0]}
+                onChange={(v) => setConfig({...config, questionFocus: v})}
               />
             )}
-            <SelectOrCustomField 
-              label="Age Group" 
-              options={AGE_GROUPS} 
-              value={config.ageGroup} 
-              onChange={(v) => setConfig({...config, ageGroup: v})} 
+            <SelectOrCustomField
+              label="Age Group"
+              options={AGE_GROUPS}
+              value={config.ageGroup}
+              onChange={(v) => setConfig({...config, ageGroup: v})}
             />
-            <SelectOrCustomField 
-              label="Severity" 
-              options={SEVERITIES} 
-              value={config.severity} 
-              onChange={(v) => setConfig({...config, severity: v})} 
+            <SelectOrCustomField
+              label="Severity"
+              options={SEVERITIES}
+              value={config.severity}
+              onChange={(v) => setConfig({...config, severity: v})}
             />
-            <div className={config.caseStyle === 'open' ? "md:col-span-1" : "md:col-span-2"}>
-              <SelectOrCustomField 
-                label="Complexity" 
-                options={COMPLEXITIES} 
-                value={config.complexity} 
-                onChange={(v) => setConfig({...config, complexity: v})} 
+            <div className={config.caseStyle === 'open' ? "" : "md:col-span-2"}>
+              <SelectOrCustomField
+                label="Complexity"
+                options={COMPLEXITIES}
+                value={config.complexity}
+                onChange={(v) => setConfig({...config, complexity: v})}
               />
             </div>
             {config.caseStyle === 'open' && (
-              <div className="md:col-span-1">
-                <SelectOrCustomField 
-                  label="Scoring Parameters" 
-                  options={SCORING_PARAMETERS} 
-                  value={config.scoringParameters || SCORING_PARAMETERS[0]} 
-                  onChange={(v) => setConfig({...config, scoringParameters: v})} 
+              <div>
+                <SelectOrCustomField
+                  label="Scoring Parameters"
+                  options={SCORING_PARAMETERS}
+                  value={config.scoringParameters || SCORING_PARAMETERS[0]}
+                  onChange={(v) => setConfig({...config, scoringParameters: v})}
                 />
               </div>
             )}
-            
-            <div className="flex flex-col gap-2 md:col-span-2">
-              <label className="font-mono text-xs uppercase font-bold tracking-widest text-muted-text">Custom Case Description / Specific Topic (Optional)</label>
-              <textarea 
-                value={config.specificTopic}
-                onChange={(e) => setConfig({...config, specificTopic: e.target.value})}
-                placeholder="Manually type a specific topic or a detailed custom case description to override or supplement the options above (e.g., '6 weeks post-op ACL reconstruction, struggling with terminal extension...')"
-                className="w-full p-4 bg-bg brutal-border font-sans text-lg focus:outline-none focus:ring-2 focus:ring-accent min-h-[120px] resize-y"
-              />
+
+            {/* Custom Case Description */}
+            <div className="md:col-span-2">
+              <div className="flex flex-col gap-2">
+                <label className="font-mono text-xs uppercase font-medium tracking-wider text-muted">
+                  Custom Case Description / Specific Topic (Optional)
+                </label>
+                <textarea
+                  value={config.specificTopic}
+                  onChange={(e) => setConfig({...config, specificTopic: e.target.value})}
+                  placeholder="Manually type a specific topic or a detailed custom case description to override or supplement the options above..."
+                  className="w-full p-4 bg-surface border border-subtle rounded-lg font-sans text-base text-ink focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent min-h-[120px] resize-y"
+                />
+              </div>
             </div>
           </div>
 
-          <div className="flex flex-col gap-4">
-            <label className="font-mono text-xs uppercase font-bold tracking-widest text-muted-text">Terminology Level</label>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {[
-                { level: 'Basic', desc: 'Simple language, guided prompts' },
-                { level: 'Intermediate', desc: 'Clinical terminology' },
-                { level: 'Advanced', desc: 'Complex, minimal guidance' }
-              ].map((t) => (
+          {/* Terminology Level */}
+          <div className="flex flex-col gap-3">
+            <label className="font-mono text-xs uppercase font-medium tracking-wider text-muted">Terminology Level</label>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {terminologyOptions.map((t) => (
                 <button
-                  key={t.level}
+                  key={t.value}
                   type="button"
-                  onClick={() => setConfig({...config, terminology: t.level as any})}
+                  onClick={() => setConfig({...config, terminology: t.value})}
                   className={cn(
-                    "p-4 brutal-border text-left transition-all flex flex-col gap-2",
-                    config.terminology === t.level 
-                      ? "bg-ink text-surface brutal-shadow-sm translate-x-[2px] translate-y-[2px]" 
-                      : "bg-surface hover:bg-bg brutal-shadow"
+                    "p-4 rounded-xl text-left transition-all border",
+                    config.terminology === t.value
+                      ? "bg-accent text-white border-accent shadow-md"
+                      : "bg-surface text-ink border-subtle hover:border-accent/30"
                   )}
                 >
-                  <span className="font-display font-bold uppercase text-lg">{t.level}</span>
+                  <span className="block font-display font-semibold text-lg mb-1">{t.label}</span>
                   <span className={cn(
-                    "font-sans text-sm",
-                    config.terminology === t.level ? "text-muted" : "text-muted-text"
-                  )}>{t.desc}</span>
+                    "text-sm",
+                    config.terminology === t.value ? "text-white/80" : "text-muted"
+                  )}>{t.description}</span>
                 </button>
               ))}
             </div>
           </div>
 
-          <button 
+          {/* Submit Button */}
+          <PrimaryButton
             type="submit"
-            className="mt-4 w-full bg-accent text-surface p-6 font-display font-bold text-2xl uppercase tracking-wider flex items-center justify-center gap-3 brutal-border brutal-shadow hover:bg-ink transition-colors group"
+            size="lg"
+            className="w-full gap-3 mt-4"
           >
-            <Play className="w-8 h-8 group-hover:scale-110 transition-transform" />
             Generate Case
-          </button>
+            <Play className="w-5 h-5" />
+          </PrimaryButton>
         </form>
       </motion.div>
     </div>
